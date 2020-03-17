@@ -79,7 +79,7 @@ var Error = newArray();
 macro "SMA - Simple Muscle Architecture Analysis" {
 
 	missing = newArray();
-	deps = newArray("OrientationJ Measure", "Non-local Means Denoising", "test");
+	deps = newArray("OrientationJ Measure", "Non-local Means Denoising", "Canny Edge Detector");
 	List.setCommands; 
 	for (i=0; i<deps.length; i++) {
 		if (List.get(deps[i])=="") { 
