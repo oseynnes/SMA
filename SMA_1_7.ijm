@@ -24,6 +24,7 @@
  * 	Version 1.7
  * 	- added error handling
  * 	- check depencies
+ * 	- fixed bug that caused analysis to fail when images are flipped and cropping manual
  */
 
 
@@ -146,6 +147,8 @@ macro "SMA - Simple Muscle Architecture Analysis" {
 		if (cropping == "Manual") {
 			list = getFileList(input);
 			open(input+File.separator+list[0]);
+			if (flip == true)
+				run("Flip Horizontally");
 			setTool("rectangle");
 			waitForUser("Select area. Click OK when done");
 			Roi.getBounds(x, y, width, height);
@@ -216,7 +219,7 @@ macro "SMA - Simple Muscle Architecture Analysis" {
 		W = getWidth;
 		H = getHeight;
 		run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");
-
+		
 		//---------------------------------------------------------
 		// Image Cropping
 		if (cropping == "Manual") {
@@ -241,7 +244,7 @@ macro "SMA - Simple Muscle Architecture Analysis" {
 			run( "Select None" );
 			selectImage(IDraw);
 			close("\\Others");
-			Le = x+width*0.01;
+			Le = x+width*0.005;
 			Up = y+height*0.01; // shifts cropped window down by 1% of its height
 			makeRectangle(Le, Up, width*0.98, height*0.97);
 		}
