@@ -5,7 +5,7 @@ A description of the processing operations can be found in the original publicat
 https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0229034
 
 Installations steps are in the "Supporting information" file. 
-###  NB: the optional step 3 to add SMA in the Plugins menu for Windows users should be replaced by the following instructions: ###
+####  NB: the optional step 3 to add SMA in the Plugins menu for Windows users should be replaced by the following instructions: ####
 - Start an update via Help > Update
 - In the ImageJ Updater window, select "Advanced mode"
 - Whith "View all files" as a View option, search for "SMA".
