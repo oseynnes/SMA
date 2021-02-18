@@ -5,7 +5,7 @@ A description of the processing operations can be found in the original publicat
 https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0229034
 
 Installations steps can be found in the "Supporting information" file published with the article. 
-####  NB: for Windows users, the optional step 3 to add SMA to the *Plugins* menu has changed. Here are updated instructions ####
+####  NB: for all users, the optional step 3 to add SMA to the *Plugins* menu has changed. Here are updated instructions ####
 
 ## Supporting information ##
 
