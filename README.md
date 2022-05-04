@@ -19,7 +19,7 @@ Scroll down the list and tick the **BIG-EPFL** and **Biomedgroup** update sites.
 
 Name | URL                         | Host
 ---- | ----------------------------|-----------
-SMA  | http://sites.imagej.net/SMA | webdav:SMA
+SMA  | https://sites.imagej.net/SMA | webdav:SMA
 
 After entering the details, make sure that the box to the left of the SMA text is ticked. Click *Close* once you have finished editing. Click *Apply changes* to confirm the installation. Close Fiji and re-open it. You are now ready to use SMA.
 
