@@ -1,5 +1,5 @@
 # SMA #
-SMA is an ImageJ macro to automate the analysis of muscle architecture from B-mode ultrasound images. It was developped in colaboration with Dr. Neil Cronin, from the University of Jyväskylä.
+SMA is an ImageJ macro to automate the analysis of muscle architecture from B-mode ultrasound images. It was developped in collaboration with Dr. Neil Cronin, from the University of Jyväskylä.
 
 A description of the processing operations can be found in the original publication:
 https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0229034
