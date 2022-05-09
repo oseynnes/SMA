@@ -5,9 +5,10 @@ A description of the processing operations can be found in the original publicat
 https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0229034
 
 Installations steps can be found in the "Supporting information" file published with the article. 
-####  NB: for all users, the optional step 3 to add SMA to the *Plugins* menu has changed. Here are updated instructions ####
+NB: for all users, the optional step 3 to add SMA to the *Plugins* menu has changed. These instructions are updated bellow.
 
 ## Supporting information ##
+[Changelog](https://github.com/oseynnes/SMA/blob/ad7daea1d9ca59cc7b80f15cb90208feb064d5b6/changelog.md)
 
 ### Installation instructions for SMA (Simple Muscle Architecture Analysis): An ImageJ/Fiji based macro for automated analysis of B-mode ultrasound images. ###
 
