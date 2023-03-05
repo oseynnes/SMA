@@ -8,10 +8,10 @@ A description of the processing operations can be found in the original publicat
 Installations steps can be found in the "Supporting information" file published with the article. 
 NB: for all users, the optional step 3 to add SMA to the *Plugins* menu has changed. These instructions are updated bellow.
 
-## Supporting information ##
+## Supporting information
 Basic user instructions can be found in the original article. Features added after the initial release are only briefly explained in the [changelog](changelog.md).
 
-### Installation instructions###
+### Installation instructions
 
 **__Step 1__**: Download the **Fiji** software using the following link. Please read the warning on this page about where to install Fiji, as this can affect your ability to get updates:  
 https://imagej.net/Fiji/Downloads
