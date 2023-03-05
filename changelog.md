@@ -2,8 +2,8 @@
 
 ## 2023-03-05
 
- Version 2.1
-  **NB: this version changes the analysis methods and the results are different from previous versions**
+ Version 2.1  
+  **NB: this version changes the analysis methods and the results are different from previous versions**  
  - implement option to open single image
  - improve handling of DICOM metadata
  - change vesselness function to detect fascicles after FFT from Tubeness to Frangi
@@ -15,8 +15,8 @@
  - add "developper" mode
  	Disable batch mode and show intermediate steps of analysis in single file mode
  
- Version 2.0
- **NB: this version changes the analysis methods and the results are different from previous versions**
+ Version 2.0.0  
+ **NB: this version changes the analysis methods and the results are different from previous versions**  
  - add possibility to take fascicle curvature into account
  	this is implemented by detecting fascicle orientation in superficial and deep regions and 
  	reconstructing a composite fascicle by simple spline fitting of two fascicle segments or 
