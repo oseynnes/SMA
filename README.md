@@ -9,7 +9,7 @@ Installations steps can be found in the "Supporting information" file published 
 NB: for all users, the optional step 3 to add SMA to the *Plugins* menu has changed. These instructions are updated bellow.
 
 ## Supporting information ##
-Basic user instructions can be found in the original article. Features added after the initial release are only briefly explained in the [changelog](https://github.com/oseynnes/SMA/blob/ad7daea1d9ca59cc7b80f15cb90208feb064d5b6/changelog.md).
+Basic user instructions can be found in the original article. Features added after the initial release are only briefly explained in the [changelog](changelog.md).
 
 ### Installation instructions###
 
