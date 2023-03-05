@@ -1,16 +1,17 @@
-# SMA #
-SMA is an ImageJ macro to automate the analysis of muscle architecture from B-mode ultrasound images. It was developped in collaboration with Dr. Neil Cronin, from the University of Jyväskylä.
+# SMA (Simple Muscle Architecture Analysis)#
+
+SMA is an ImageJ macro to automate the analysis of muscle architecture from B-mode ultrasound images. It was developed in collaboration with Dr. Neil Cronin, from the University of Jyväskylä.
 
 A description of the processing operations can be found in the original publication:
-https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0229034
+*Seynnes, O. R., & Cronin, N. J. (2020). Simple Muscle Architecture Analysis (SMA): An ImageJ macro tool to automate measurements in B-mode ultrasound scans. _PloS One_, _15_(2), e0229034. [https://doi.org/10.1371/journal.pone.0229034](https://doi.org/10.1371/journal.pone.0229034)*
 
 Installations steps can be found in the "Supporting information" file published with the article. 
 NB: for all users, the optional step 3 to add SMA to the *Plugins* menu has changed. These instructions are updated bellow.
 
 ## Supporting information ##
-[Changelog](https://github.com/oseynnes/SMA/blob/ad7daea1d9ca59cc7b80f15cb90208feb064d5b6/changelog.md)
+Basic user instructions can be found in the original article. Features added after the initial release are only briefly explained in the [changelog](https://github.com/oseynnes/SMA/blob/ad7daea1d9ca59cc7b80f15cb90208feb064d5b6/changelog.md).
 
-### Installation instructions for SMA (Simple Muscle Architecture Analysis): An ImageJ/Fiji based macro for automated analysis of B-mode ultrasound images. ###
+### Installation instructions###
 
 **__Step 1__**: Download the **Fiji** software using the following link. Please read the warning on this page about where to install Fiji, as this can affect your ability to get updates:
 https://imagej.net/Fiji/Downloads
@@ -24,7 +25,7 @@ SMA  | https://sites.imagej.net/SMA | webdav:SMA
 
 After entering the details, make sure that the box to the left of the SMA text is ticked. Click *Close* once you have finished editing. Click `Apply changes` to confirm the installation. Close Fiji and re-open it. You are now ready to use SMA.
 
-**__Optional step 3 (recommended)__**: It is convenient to **add the SMA macro to the list of available plugins** so that you can run SMA from the dropdown menu. Otherwise you’ll need to open the file from the Fiji macros folder, and run it manually. To add SMA to the Plugins dropdown list, start an update via `Help > Update`. In the ImageJ Updater window, select `Advanced mode`. Whith "View all files" as a View option, search for "SMA". If the "Status/Action" column says "Not installed" for the row "plugins/SMA_171.ijm", select the row, click `Install`. Click `Apply changes to confirm the installation and restart. The SMA macro should now appear at the bottom of the dropdown Plugins list.
+**__Optional step 3 (recommended)__**: It is convenient to **add the SMA macro to the list of available plugins** so that you can run SMA from the dropdown menu. Otherwise you’ll need to open the file from the Fiji macros folder, and run it manually. To add SMA to the Plugins dropdown list, start an update via `Help > Update`. In the ImageJ Updater window, select `Advanced mode`. With "View all files" as a View option, search for "SMA". If the "Status/Action" column says "Not installed" for the row "plugins/SMA_210.ijm", select the row, click `Install`. Click `Apply changes` to confirm the installation and restart. The SMA macro should now appear at the bottom of the dropdown Plugins list.
 
 **__Optional step 4__**: **To analyse movie frames** (see limitations in the companion article) with SMA, movies must first be imported into Fiji and converted into image sequences (NB: movies can also be converted in advance using some other software). This is possible if the update site for the **FFMEG** plugins is added (follow the procedure described above).
 A movie file can then be imported by clicking `File > Import > Movie (FFMPEG)`, selecting the movie and accepting the default *Import* options. Once imported, the movie can be converted into an image sequence in several ways.
