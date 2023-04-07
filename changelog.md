@@ -1,5 +1,15 @@
 # Changelog
 
+
+## 2023-04-07
+
+ Version 2.2  
+  **NB: this version changes the analysis methods and the results are different from previous versions**  
+- implement contrast enhancement (CLAHE plugin) for fascicles
+- implement handling for movies and image sequences
+- fix bug causing fascicle insertions to not be displayed correctly when the muscle is not horizontal
+ - various bug fixes
+
 ## 2023-03-05
 
  Version 2.1  
