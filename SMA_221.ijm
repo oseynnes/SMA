@@ -2,6 +2,11 @@
 // SMA - SIMPLE MUSCLE ARCHITECTURE ANALYSIS //
 ///////////////////////////////////////////////
 /*
+*   Reference:
+*   Seynnes OR, Cronin NJ. Simple Muscle Architecture Analysis (SMA): An ImageJ macro tool to automate measurements in B-mode ultrasound scans. PLoS One. 2020;15: e0229034. doi:10.1371/journal.pone.0229034
+*   Hosted at: 
+*   https://github.com/oseynnes/SMA
+*   
 *	Requires OrientationJ plugin v2.0.3 (http://bigwww.epfl.ch/demo/orientation - Z. P sp ki, M. Storath, D. Sage, M. Unser, "Transforms and Operators for Directional Bioimage Analysis: A Survey," Advances in Anatomy, Embryology and Cell Biology, vol. 219, Focus on Bio-Image Informatics, Springer International Publishing, May 21, 2016.)
 *	Requires Canny Edge Detector plugin (https://imagej.nih.gov/ij/plugins/canny/index.html - Tom Gibara)
 *	Requires Non Local Means Denoise plugin v1.4.6 (https://imagej.net/Non_Local_Means_Denoise - Pascal Behnel, Thorsten Wagner)
@@ -24,7 +29,14 @@
 // Change log //
 ////////////////
 /*
- * Version 2.2
+ *  Version 2.2.1
+ *  - fix manual cropping
+ *  - fix aponeuroses display in cases of relative misalignment
+ *  - change settings interface
+ *  	secondary settings are now shown in a secondary interface if necessary
+ *  	settings are stored in a 'SMA_prefs.txt' file in Fiji 'plugins' directory
+ * 
+ *  Version 2.2
  *  - implement contrast enhancement (CLAHE plugin) for fascicles
  *  - implement handling for movies and image sequences
  *  - fix bug causing fascicle insertions to not be displayed correctly when the muscle is not horizontal
@@ -73,22 +85,13 @@
 // Script parameters //
 ///////////////////////
 /*									
-#@ String(value = "<html><b> SMA - SIMPLE MUSCLE ARCHITECTURE ANALYSIS </b></html>", visibility="MESSAGE") title
-#@ String(value = "NB: Analysis only works with lower aponeurosis orientated horizontally or downwards to the left", visibility="MESSAGE") text0
+#@ String(value = "<html><b> SMA - SIMPLE MUSCLE ARCHITECTURE ANALYSIS </b> <br>doi:10.1371/journal.pone.0229034</br> <br>https://github.com/oseynnes/SMA</br></html>", visibility="MESSAGE") title
+#@ String(value = "NB: The analysis only works with the lower aponeurosis orientated horizontally or downwards to the left", visibility="MESSAGE") text0
 
 #@ Boolean (label="Flip image horizontally", value=false, persist=true, description="Required if image displays proximal side to the right") flip
-#@ Boolean (label="Panoramic scan", value=false, persist=true, description="panoramic or regular scan") pano
-#@ Double(label="x field of view", value = 2.0, min=1.0, max=2.0, stepSize=0.25, persist=false) xFoV
+#@ Boolean (label="Panoramic scan (DICOM only)", value=false, persist=true, description="panoramic or regular scan") pano
 #@ String (label = "Fascicle geometry", choices= {"Straight", "Curved_spline", "Curved_circle"}, style="radioButtonHorizontal", description="Assume straight or curved fascicles. Circle method according to Muramatsu et al JAP 2002") geometry
 #@ String (label = "Type of analysis", choices= {"Current file", "Open file", "Open folder"}, style="radioButtonHorizontal", description="Analyse single image or several images") analysis
-#@ String (label = "File extension", choices = {".bmp", ".BMP", ".jpg", ".tif", ".png", ".dcm", ""}, description="Required") extension
-
-#@ String(value = "------------------ Single file path -------------------", visibility="MESSAGE") text1
-#@ File (label="Select a file", style="file", required = false) inputFile
-
-#@ String(value = "------------------ Directories paths ------------------", visibility="MESSAGE") text2
-#@ File (label = "Input directory", style = "directory", required = false) input
-#@ File (label = "Output directory", style = "directory", required = false) output
 
 #@ String(value = "------------------ Image cropping ------------------", visibility="MESSAGE") text3	
 #@ String(label = " ", choices= {"Automatic (requires identical scan depth)", "Manual"}, style="radioButtonHorizontal", persist=true) cropping
@@ -115,6 +118,10 @@
 */
 
 // GLOBAL VARIABLES ------------------------------------------------------------
+var inputFile = "";
+var output = "";
+var input = "";
+var xFoV = 1.5;
 var is_stack = false;
 var image_titles = newArray();
 var ALPHA = newArray();
@@ -129,7 +136,6 @@ var Tubeness_sigma = newArray();
 var ROI_h = newArray();
 var Thresholding = newArray();
 var OrientationJ_sigma = newArray();
-var shift_aponeuroses = 0;
 var Error = newArray();
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -139,6 +145,7 @@ macro "SMA - Simple Muscle Architecture" {
 // description
 	plugins = newArray("OrientationJ Measure", "Non-local Means Denoising", "Canny Edge Detector");
 	check_dependencies(plugins);
+	secondary_gui();
 	clear_results_and_roimanager();
 
 	if (analysis == "Current file" || analysis == "Open file") { 
@@ -202,16 +209,18 @@ macro "SMA - Simple Muscle Architecture" {
 		if (flip == true)
 			run("Flip Horizontally", "slice");
 
-		if (pano == true) { // ONLY tested with Philips HD11 and Hologic Mach30
+		if (pano == true) { 
+			// ONLY tested with Philips HD11 and Hologic Mach30
+			// ONLY works without manual cropping (v.221) TODO
 			Wtemp = getWidth; 
 			Htemp = getHeight;
 			dcmScale = 1 / (metadata_scale() * 10); // Retrieve scaling information in DICOM
 			FoV_width = 5;  // 5 cm, arbitrary parameter!!
 			pxl_to_FoV = round(5/dcmScale) * xFoV; // x FoV
-			makeRectangle(Wtemp-pxl_to_FoV, 0, pxl_to_FoV, Htemp); 		
+			makeRectangle(Wtemp - pxl_to_FoV, 0, pxl_to_FoV, Htemp); 		
 			run("Crop");
 		}
-		
+
 		start = getTime(); // Use this to time how long the whole code takes for one image
 		title = getTitle();
 		IDraw = getImageID();
@@ -247,12 +256,11 @@ macro "SMA - Simple Muscle Architecture" {
 			Up = y+height*0.01; // shifts cropped window down by 1% of its height
 			makeRectangle(Le, Up, width*0.98, height*0.97);			
 		}
-	
+
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// Filter and detect aponeuroses //
 		///////////////////////////////////
-
-		run("Duplicate...", " ");				
+		run("Duplicate...", " ");					
 		IDFoV = getImageID();		
 		WFoV = getWidth; //Dimensions of the field of view
 		HFoV = getHeight;
@@ -381,9 +389,9 @@ macro "SMA - Simple Muscle Architecture" {
 		if (ok == 1) {
 			L = round(0.05*WFoV);
 			R = round(0.95*WFoV);
-			W2 = R - L;
-				
-			if (Lower.length < Upper.length) {
+			W2 = R - L;		
+			// Adjust aponeuroses to same length
+			if (Lower.length < Upper.length) {			
 				maxL = Upper.length;
 				Lower2 = newArray(Upper.length);
 				for (t=0; t<Lower.length; t++)
@@ -393,8 +401,8 @@ macro "SMA - Simple Muscle Architecture" {
 				islope = (i2 - i1) / Lower.length;
 				for (p=Lower.length; p<Upper.length; p++)
 					Lower2[p] = Lower2[p-1] + islope;
-				Lower = Array.copy(Lower2);
-			} else if (Upper.length < Lower.length) {
+				Lower = Array.copy(Lower2);			
+			} else if (Upper.length < Lower.length) {				
 				maxL = Lower.length;
 				Upper2 = newArray(Lower.length);
 				for (t=0; t<Upper.length; t++)
@@ -418,11 +426,6 @@ macro "SMA - Simple Muscle Architecture" {
 				Lower[t] = Lower[t] + Up;
 				x_low[t] = lo_st[0] + t + Le;
 			}
-			
-			// Plot the curves on top of the existing image	
-			selectImage(IDraw);
-			applyOverlay(Upper, x_upp);
-			applyOverlay(Lower, x_low);
 
 			// select part of aponeuroses to extrapolate from
 			upper_idx1 = 0;
@@ -446,6 +449,22 @@ macro "SMA - Simple Muscle Architecture" {
 			a_2 = Fit.p(0); b_2 = Fit.p(1);
 			betaDeep = atan(b_2)* (180/PI); //angle deep aponeurosis
 
+			// In case the lower aponeurosis is not aligned with the upper one
+			if (x_low[0] > x_upp[0]) {
+				x_diff = x_upp[0] - x_low[0];
+				Lower_temp = newArray(x_low.length);
+				for (i = 0; i < Lower_temp.length; i++) {
+					x_low[i] += x_diff;
+					Lower_temp[i] = b_2 * x_low[i] + a_2;
+				}
+				Lower = Lower_temp;
+			}
+			
+			// Plot the curves on top of the existing image	
+			selectImage(IDraw);
+			applyOverlay(Upper, x_upp);
+			applyOverlay(Lower, x_low);
+
 			// rename aponeuroses coordinates arrays 
 			UAx = Array.copy(x_upp); //upper aponeurosis x values
 			UAy = Array.copy(Upper); //upper aponeurosis y values
@@ -463,7 +482,7 @@ macro "SMA - Simple Muscle Architecture" {
 			a_m = MAy[0] - b_m * MAx[0];
 			betaM = atan(b_m)* (180/PI); //angle mid line
 		}
-		
+	
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// Measure fascicle orientation	//
 		//////////////////////////////////	
@@ -528,7 +547,7 @@ macro "SMA - Simple Muscle Architecture" {
 		if (cont > 0) {
 			store = newArray(n);										
 			for (i=2; i<n; i++)  {
-				roiManager("select", i);						
+				roiManager("select", i);
 				run("Duplicate...", " ");
 				IDROI  = getImageID();
 				
@@ -564,8 +583,7 @@ macro "SMA - Simple Muscle Architecture" {
 				run("Select None");
 				run("Options...", "iterations=1 count=1 black do=Open");
 				run("Create Selection");
-				selectImage(bin);	
-				close ();
+				selectImage(bin); close ();
 				selectImage(IDROI);							
 				run("Restore Selection");
 				run("Make Inverse");
@@ -578,9 +596,8 @@ macro "SMA - Simple Muscle Architecture" {
 				setThreshold(find_lower_thresh(99.7), 255);  // used to be 99.82
 				run("Convert to Mask");
 				run("Inverse FFT");
-				IDinvFFT2 = getImageID();
-				selectImage(IDFFT2);
-				close ();
+				IDinvFFT2 = getImageID();				
+				selectImage(IDFFT2); close ();
 				selectImage(IDinvFFT2);
 				run("8-bit");
 				n_frangi = 3;  // number of times to run the Frangi filter
@@ -622,8 +639,7 @@ macro "SMA - Simple Muscle Architecture" {
 				close ();	
 			}
 		}
-		selectImage(IDrawR);
-		close ();
+		selectImage(IDrawR); close ();
 		roiManager("reset");			
 
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -762,7 +778,7 @@ macro "SMA - Simple Muscle Architecture" {
 			r = NaN;
 	
 			makeLine(Olx, Oly, Oux, Ouy);
-			roiManager("Add");	
+			roiManager("Add");
 		}
 
 		//adjust fascicle and ROIs display
@@ -791,7 +807,6 @@ macro "SMA - Simple Muscle Architecture" {
 				Wnew=W+right; 
 				run("Canvas Size...", "width=Wnew height=H position=Center-Left zero");          			
 			} else if (Nx2<0 && Nx1>W && left>right) {
-				shift_aponeuroses = left;
 				Wnew=W+left*2;
 				run("Canvas Size...", "width=Wnew height=H position=Center zero"); 
 				for (i=0; i<n; i++)  {
@@ -800,7 +815,6 @@ macro "SMA - Simple Muscle Architecture" {
 					roiManager("Update");
 				}  
 			} else if (Nx2<0 && Nx1>W && left<right) {
-				shift_aponeuroses = right;
 				Wnew=W+right*2;
 				run("Canvas Size...", "width=Wnew height=H position=Center zero"); 	 
 				for (i=0; i<n; i++)  {
@@ -810,7 +824,6 @@ macro "SMA - Simple Muscle Architecture" {
 				}	       			
 			}
 		}
-			
 		//scaled fascicle length and curvature
 		if (scaling == "Automatic (requires metadata)" || scaling == "Manual") {
 			Lf = Lf / scaleFactor;
@@ -1050,6 +1063,7 @@ function manual_cropping(folder_path) {
 		run("Duplicate...", " ");
 		if (flip == true) {
 			run("Flip Horizontally");
+		}
 	}
 	setTool("rectangle"); 
 	waitForUser("Select area. Click OK when done");
@@ -1119,38 +1133,57 @@ function find_lower_thresh(excluded_percent) {
 
 function lineFinder(in1, in2, in3) { 
 //in1: vert start point of line, in2: vert end point of line, in3: 1 for upper line, 0 for lower
-	L = round(0.05*WFoV); R = round(0.95*WFoV); M = 0.5*WFoV;	
-	makeLine(M, in1, M, in2); // Search from middle of image
+	
+	// Calculate constants based on the width of field of view (WFoV)
+	L = round(0.05*WFoV); // Left boundary
+	R = round(0.95*WFoV); // Right boundary
+	M = 0.5*WFoV; // Middle point
+
+	// Search for lines from the middle of the image
+	makeLine(M, in1, M, in2);
 	profile = getProfile();
+	
+	// Store the indices of potential lines in the 'hold' array
 	hold = newArray(1);
 	for (j=0; j<profile.length; j++) // First count how many 'lines' there are
 		if (profile[j] > 50)  // 50 is a threshold- pixel intensities above 50 are white
 			hold = append(hold, j + in1, 0); // Store the indices of each possible line in hold
 	hold = Array.slice(hold, 1, hold.length);
-	line = newArray(1);
-	ind1 = 0;
-	ind2 = 1;
 	
+	// Initialize variables for line tracking
+	line = newArray(1); ind1 = 0; ind2 = 1;
+	
+	// Determine the starting index based on the value of in3 (1 for upper line, 0 for lower)
 	if (in3 == 1)
 		a = hold.length - 1;
 	else
 		a = 0;
-	found = 0; 
+	
+	found = 0;  // Flag to indicate if a suitable line is found
+	
+	// Iterate until a suitable line is found or the search is exhausted
 	while (found != 1 && a >= 0 && a < hold.length) {
 		line[0] = hold[a]; // Start with right half of line
+		
+		// Check just above/below each 'line' for a parallel line
 		if(in3 == 1)
-			makeLine(M+1, line[0]-21, M+1, line[0]-1); // Check just above/below each 'line' for a parallel line
+			makeLine(M+1, line[0]-21, M+1, line[0]-1);
 		else
 			makeLine(M+1, line[0]+1, M+1, line[0]+20);
+		
 		pr = getProfile();
 		sum = 0;
+		
+		// Calculate the sum of pixel intensities in the profile
 		for(c=0; c<pr.length; c++)
 			sum += pr[c];
+		
 		if(sum < 50)
 			sum += 1; // Do nothing (this is not the right line, try the next one)
 		else {
-		
 			b = line[0];
+			
+			// Find the right half of the line
 			for(s=M+1; s<R; s++) {
 				makeLine(s, b-1, s, b+1); // Assume aponeurosis location varies by no more than +/-1 per pixel
 				prof = getProfile();
@@ -1160,10 +1193,13 @@ function lineFinder(in1, in2, in3) {
 						b = (b - 1) + t;
 						line = append(line, b, 0);  
 						t = prof.length; 
-						ind2 = s; } }
+						ind2 = s;
 					}
+				}
+			}
 					
 			b = line[0];
+			
 			// Find left half of line
 			for(s=M; s>L; s--) {  // WAS M-1, might change back
 				makeLine(s, b-1, s, b+1); // Assume aponeurosis location varies by no more than +/-1 per pixel
@@ -1174,25 +1210,28 @@ function lineFinder(in1, in2, in3) {
 						b = (b - 1) + t; 
 						line = append(line, b, 1); 
 						t = prof.length; 
-						ind1 = s; } } 
-								}
-	}
-	if (line.length > 2) { // If a suitable line is found, stop the loop
-		a = hold.length;
-		found = 1; }
-	else if (in3 == 1 && a-1 >= 0) // Or increment and keep looking for a suitable line
-		a -= 1;
-	else if (in3 == 0 && a+1 < hold.length)
-		a += 1;
-	else	// Otherwise stop the loop and move to the next section
-		a = hold.length;
+						ind1 = s;
+					}
+				} 
+			}
+		}	
+		if (line.length > 2) { // If a suitable line is found, stop the loop
+			a = hold.length;
+			found = 1;
+		}
+		else if (in3 == 1 && a-1 >= 0) // Or increment and keep looking for a suitable line
+			a -= 1;
+		else if (in3 == 0 && a+1 < hold.length)
+			a += 1;
+		else	// Otherwise stop the loop and move to the next section
+			a = hold.length;
 	}
 	// If no suitable line is found, find the most proximal (deep aponeurosis) or distal line
-		if(found == 0) { 
-			for(a=0; a<hold.length; a++){
-				line[0] = hold[a];
-				b = line[0];
-				for(s=M+1; s<R; s++) {
+	if(found == 0) { 
+		for(a=0; a<hold.length; a++){
+			line[0] = hold[a];
+			b = line[0];
+			for(s=M+1; s<R; s++) {
 				makeLine(s, b-1, s, b+1); // Assume aponeurosis location varies by no more than +/-1 per pixel
 				prof = getProfile();
 				// Right half of line
@@ -1201,9 +1240,11 @@ function lineFinder(in1, in2, in3) {
 						b = (b - 1) + t;
 						line = append(line, b, 0);  
 						t = prof.length;
-						ind2 = s; } }
+						ind2 = s;
 					}
-				b = line[0];
+				}
+			}
+			b = line[0];
 
 			// Find left half of line
 			for(s=M-1; s>L; s--) {
@@ -1215,16 +1256,18 @@ function lineFinder(in1, in2, in3) {
 						b = (b - 1) + t; 
 						line = append(line, b, 1); 
 						t = prof.length;
-						ind1 = s; } } 
-								}
+						ind1 = s;
+					}
+				} 
+			}
 			if(line.length > 0.60*WFoV)
 				a = hold.length;
 		}
-		}
+	}
 	line = append(line, ind1, 0); // Need the indices of the start/end of the accepted line
 	line = append(line, ind2, 0);
 	return line; 
-	}
+}
 
 
 function compDiff() {
@@ -1325,6 +1368,11 @@ function userscale() {
 
 function handle_stacks() { 
 // function description
+	list = getList("image.titles");
+	if (list.length==0) {
+		List.clear();
+	    exit("No image windows are open");
+	}
 	if (nSlices == 1)  // not a stack
 		return;
 	is_stack = true;
@@ -1374,3 +1422,125 @@ function handle_stacks() {
 	Overlay.show
 	exit;
 }
+
+
+function create_settings_log(logpath) { 
+// create settings log file if it does not exists
+// settings are used for the GUI generated with the Dialog class in the secondary_gui function
+	List.clear();
+	var_names = newArray(  // list variables names and default values
+		"flip", 
+		"pano", 
+		"xFoV", 
+		"geometry", 
+		"analysis", 
+		"extension",
+		"inputFile",
+		"input",
+		"output",
+		"cropping",
+		"Tsigma",
+		"clahe_ap",
+		"apLength",
+		"extrapolate_from",
+		"ROIheight",
+		"ROIwidth",
+		"clahe_fasc",
+		"Osigma",
+		"scaling",
+		"depth",
+		"param",
+		"dev");
+	
+	vars = newArray(
+		false, 
+		false, 
+		1.5, 
+		"Straight", 
+		"Current file", 
+		".tif",
+		getDir("downloads"),
+		getDir("downloads"),
+		getDir("downloads"),
+		"Automatic (requires identical scan depth)",
+		10,
+		false,
+		80,
+		"50%",
+		"50",
+		"60",
+		false,
+		"1",
+		"None",
+		"5",
+		true,
+		false);
+		  
+	// pair default settings keys - values in a list
+	for (i = 0; i < var_names.length; i++) {
+		List.set(var_names[i], vars[i]);
+	} 
+    f = File.open(logpath);  // command that creates file
+	print(f, List.getList);  // add list to file
+    File.close(f);
+}
+
+
+function load_settings_file() { 
+// function description
+	logpath = getDir("plugins")+"SMA_prefs.txt";  // set settings log path
+	if(!File.exists(logpath)) {
+		//print(logpath+" does not exists");
+		create_settings_log(logpath);
+	}
+	logstring = File.openAsString(logpath);
+	List.setList(logstring);
+}
+
+
+function update_settings_file() { 
+// update settings
+	f = File.open(getDir("plugins")+"SMA_prefs.txt");
+	print(f, List.getList);
+	File.close(f);
+}
+
+
+function secondary_gui() {
+// set additional dialog if required
+	if (pano == true || analysis == "Open file" || analysis == "Open folder") {
+		load_settings_file();
+		Dialog.createNonBlocking("Additional settings");
+		
+		if (pano == true) {
+			Dialog.addMessage("Sub-selection of panoramic scan (experimental)");
+			Dialog.setInsets(0, 0, 20);
+			Dialog.addSlider("x field of view", 1.0, 2.0, List.getValue("xFoV"));
+		}
+		
+		if (analysis == "Open file") {
+			Dialog.addFile("Select a file", List.getValue("inputFile"));
+		} else if (analysis == "Open folder") {
+			Dialog.addDirectory("Input directory", List.getValue("input"));
+			Dialog.addDirectory("Output directory", List.getValue("output"));
+			Dialog.addChoice("File extension", newArray(".bmp", ".BMP", ".jpg", ".tif", ".png", ".dcm", ""), List.get("extension"));
+		}
+		
+		Dialog.show();
+			
+		if (pano == true)
+			xFoV = Dialog.getNumber(); List.set("xFoV", xFoV);
+			
+		if (analysis == "Open file") {
+			inputFile = Dialog.getString(); List.set("inputFile", inputFile);
+		} else if (analysis == "Open folder") {
+			input = Dialog.getString(); List.set("input", input);
+			output = Dialog.getString(); List.set("output", output);
+			extension = Dialog.getChoice(); List.set("extension", extension);
+		}
+		
+		update_settings_file();
+		List.clear();
+	}
+}
+
