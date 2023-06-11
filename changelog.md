@@ -1,7 +1,7 @@
 # Changelog
 
 
-## 2023-04-07
+## 2023-05-14
 
  Version 2.2.1  
 - fix manual cropping  
