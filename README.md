@@ -17,15 +17,21 @@ Basic user instructions can be found in the original article. Features added aft
 https://imagej.net/Fiji/Downloads
 
 **__Step 2__**: After downloading and running Fiji, you need to gather a few **dependencies**. First, click `Help` from the dropdown menu in Fiji, then choose *Update*. In the Updater window, select `Manage update sites`. In the window that appears, you will notice that some boxes are already ticked. This means that if/when an update is released for the corresponding programme, your machine will automatically install it at the first opportunity.
-Scroll down the list and tick the **BIG-EPFL** and **Biomedgroup** update sites. Then, click the `Add update` site button and scroll to the bottom of the list, where a new update site has been added. Modify the details of the new site as follows (to modify a section, double-click it): 
+Scroll down the list and tick the **BIG-EPFL** and **Biomedgroup** update sites.  
+If in addition you want to install the **latest version** of SMA (not the **original one**, see next section), click the `Add update` site button and scroll to the bottom of the list, where a new update site has been added. Modify the details of the new site as follows (to modify a section, double-click it): 
 
 Name | URL                         | Host
 ---- | ----------------------------|-----------
 SMA  | https://sites.imagej.net/SMA | webdav:SMA
 
-After entering the details, make sure that the box to the left of the SMA text is ticked. Click *Close* once you have finished editing. Click `Apply changes` to confirm the installation. Close Fiji and re-open it. You are now ready to use SMA.
+After entering the details, make sure that the box to the left of the SMA text is ticked.  
+Click *Close* once you have finished editing. Click `Apply changes` to confirm the installation. Close Fiji and re-open it. You are now ready to use SMA.
 
-**__Optional step 3 (recommended)__**: It is convenient to **add the SMA macro to the list of available plugins** so that you can run SMA from the dropdown menu. Otherwise you’ll need to open the file from the Fiji macros folder, and run it manually. To add SMA to the Plugins dropdown list, start an update via `Help > Update`. In the ImageJ Updater window, select `Advanced mode`. With "View all files" as a View option, search for "SMA". If the "Status/Action" column says "Not installed" for the row "plugins/SMA_*version_number*.ijm", select the row, click `Install`. Click `Apply changes` to confirm the installation and restart. The SMA macro should now appear at the bottom of the dropdown Plugins list.
+**__Optional step 3 (recommended)__**: It is convenient to **add the SMA macro to the list of available plugins** so that you can run SMA from the dropdown menu. Otherwise you’ll need to open the file from the Fiji macros folder, and run it manually.  
+**Latest version:**  
+To add the latest version of SMA to the Plugins dropdown list, start an update via `Help > Update`. In the ImageJ Updater window, select `Advanced mode`. With "View all files" as a View option, search for "SMA". If the "Status/Action" column says "Not installed" for the row "plugins/SMA_*version_number*.ijm", select the row, click `Install`. Click `Apply changes` to confirm the installation and restart. The SMA macro should now appear at the bottom of the dropdown Plugins list.  
+**Original version (1.7.1):**  
+Simply download the file `SMA_171.ijm` and save it in the Fiji `Plugins` folder or in a subfolder. It will appear in the corresponding menu (e.g. Plugins › SMA 171 or Plugins › MyScripts › SMA 171) after restarting the program.
 
 **__Optional step 4__**: **To analyse movie frames** (see limitations in the companion article) with SMA, movies must first be imported into Fiji and converted into image sequences (NB: movies can also be converted in advance using some other software). This is possible if the update site for the **FFMEG** plugins is added (follow the procedure described above).  
 **Opening a movie externally:**  
