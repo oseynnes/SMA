@@ -1,6 +1,21 @@
 # Changelog
 
 
+## 2024-03-08
+
+ Version 2.3  
+ **NB: this version changes the analysis methods and the results are different from previous versions**  
+- Add fascicle detection outline at the end of analysis  
+- Add possibility to let user test and adjust parameters for aponeurosis detection  
+- Add manual cropping for panoramic scans  
+- Revert fix for aponeuroses display in version 2.2.1 because it prevented analysis of panoramic scans  
+- Improve aponeuroses and fascicle prefiltering by using MorphoLibJ plugin instead of custom directional filter  
+- Improve fascicle prefiltering  
+The sigma value of the vesselness filter now matches the chosen sigma used for the Laplacian of Gaussian. This make the prefiltering somewhat adapted to expected fascicle thickness.  
+The "test" function for the Laplacian of Gaussian value was removed as it could not be maintained with this change.  
+One of the filtering steps was also removed as it was not improving detection.  
+- Fix various bugs  
+	
 ## 2023-05-14
 
  Version 2.2.1  

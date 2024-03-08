@@ -9,8 +9,9 @@
 *   
 *	Requires OrientationJ plugin v2.0.3 (http://bigwww.epfl.ch/demo/orientation - Z. P sp ki, M. Storath, D. Sage, M. Unser, "Transforms and Operators for Directional Bioimage Analysis: A Survey," Advances in Anatomy, Embryology and Cell Biology, vol. 219, Focus on Bio-Image Informatics, Springer International Publishing, May 21, 2016.)
 *	Requires Canny Edge Detector plugin (https://imagej.nih.gov/ij/plugins/canny/index.html - Tom Gibara)
+*	Requires MorphoLibJ v1.6.2 (https://imagej.net/plugins/morpholibj - Legland, D., Arganda-Carreras, I., & Andrey, P. (2016). MorphoLibJ: integrated library and plugins for mathematical morphology with ImageJ. Bioinformatics, 32(22), 3532–3534.
 *	Requires Non Local Means Denoise plugin v1.4.6 (https://imagej.net/Non_Local_Means_Denoise - Pascal Behnel, Thorsten Wagner)
-*
+*	
 *	This program is free software: you can redistribute it and/or modify
 *	it under the terms of the GNU General Public License as published by
 *	the Free Software Foundation, either version 3 of the License, or
@@ -29,56 +30,20 @@
 // Change log //
 ////////////////
 /*
- *  Version 2.2.1
- *  - fix manual cropping
- *  - fix aponeuroses display in cases of relative misalignment
- *  - change settings interface
- *  	secondary settings are now shown in a secondary interface if necessary
- *  	settings are stored in a 'SMA_prefs.txt' file in Fiji 'plugins' directory
+ *  Version 2.3
+ *  *NB: this version changes the analysis methods and the results are different from previous versions*
+ *  - Add fascicle detection outline at the end of analysis
+ *  - Add possibility to let user test and adjust parameters for aponeurosis detection.
+ *  - Add manual cropping for panoramic scans
+ *  - Revert fix for aponeuroses display in version 2.2.1 because it prevented analysis of panoramic scans
+ *  - Improve aponeuroses and fascicle prefiltering by using MorphoLibJ plugin instead of custom directional filter
+ *  - Improve fascicle prefiltering
+ *  	The sigma value of the vesselness filter now matches the chosen sigma used for the Laplacian of Gaussian.
+ *  	This make the prefiltering somewhat adapted to expected fascicle thickness.
+ *  	The "test" function for the Laplacian of Gaussian value was removed as it could not be maintained with this change.
+ *  	One of the filtering steps was also removed as it was not improving detection.
+ *  - Fix various bugs
  * 
- *  Version 2.2
- *  - implement contrast enhancement (CLAHE plugin) for fascicles
- *  - implement handling for movies and image sequences
- *  - fix bug causing fascicle insertions to not be displayed correctly when the muscle is not horizontal
- *  - various bug fixes
- * 
- * 	Version 2.1
- * 	- implement option to open single imnage
- * 	- improve handling of DICOM metadata
- * 	- change vesselness function to detect fascicles after FFT from Tubeness to Frangi
- * 		This is important as it means the results are different from previous versions
- * 	- make aponeurosis enhancing step (CLAHE plugin) optional.
- * 		This filter only helps in case of faint aponeuroses but could make the analysis fail in other cases
- * 	- add expected aponeurosis length option.
- * 		relative to FoV length (default 80%), can be helpful in cases of false positives
- * 	- complete commenting
- * 	- add "developper" mode
- * 		Disable batch mode and show intermediate steps of analysis in single file mode
- * 	
- * 	Version 2.0
- * 	- add possibility to take fascicle curvature into account
- * 		this is implemented by detecting fascicle orientation in superficial and deep regions and 
- * 		reconstructing a composite fascicle by simple spline fitting of two fascicle segments or 
- * 		by circle fitting. These methods are based on fitting curves across the insertion points and the 
- * 		intersection points between fascicles segments at mid-distance between aponeuroses.
- * 	- detect fascicle orientation based on single (straight fascicle method) or paired 
- * 		(curved fascicles methods) ROIs. This change is possible because the image is now rotated 
- * 		by an angle equal to lower aponeurosis angle and ROIs can be broader.
- * 	- add panoramic mode
- * 		currently, add the possibility to standardise ROI width by selecting a subregion with a 
- * 		width = FoV width * 'x field of view' factor, chosen by user.
- * 		NB: there is no detection of the original FoV width, a width of 5 cm is currently assumed!
- * 	- various changes to filtering method before measurement of fascicle orientation.
- * 		This is important as it means the results are different from previous versions
- * 	- various bug fixes and code improvements.
- * 	
- * 	Version 1.7.1
- * 	- add possibility to extrapolate aponeuroses from 100% or 50% of detected length
- * 	
- * 	Version 1.7
- * 	- add error handling
- * 	- check depencies
- * 	- fix bug that caused analysis to fail when images are flipped and cropping manual
  */
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -86,34 +51,32 @@
 ///////////////////////
 /*									
 #@ String(value = "<html><b> SMA - SIMPLE MUSCLE ARCHITECTURE ANALYSIS </b> <br>doi:10.1371/journal.pone.0229034</br> <br>https://github.com/oseynnes/SMA</br></html>", visibility="MESSAGE") title
+
 #@ String(value = "NB: The analysis only works with the lower aponeurosis orientated horizontally or downwards to the left", visibility="MESSAGE") text0
-
 #@ Boolean (label="Flip image horizontally", value=false, persist=true, description="Required if image displays proximal side to the right") flip
-#@ Boolean (label="Panoramic scan (DICOM only)", value=false, persist=true, description="panoramic or regular scan") pano
-#@ String (label = "Fascicle geometry", choices= {"Straight", "Curved_spline", "Curved_circle"}, style="radioButtonHorizontal", description="Assume straight or curved fascicles. Circle method according to Muramatsu et al JAP 2002") geometry
+
+#@ Boolean (label="Panoramic scan", value=false, persist=true, description="panoramic or regular scan") pano
+#@ String (label = "Fascicle model", choices= {"Straight", "Curved_spline", "Curved_circle"}, style="radioButtonHorizontal", description="Assume straight or curved fascicles. Circle method according to Muramatsu et al JAP 2002") geometry
 #@ String (label = "Type of analysis", choices= {"Current file", "Open file", "Open folder"}, style="radioButtonHorizontal", description="Analyse single image or several images") analysis
+#@ String(label = "Image cropping", choices= {"Automatic (requires identical scan depth)", "Manual"}, style="radioButtonHorizontal", persist=true) cropping
+#@ String (choices={"None", "Automatic (requires metadata)", "Manual"}, style="radioButtonHorizontal", persist=true, description="Pixel scaling") scaling
 
-#@ String(value = "------------------ Image cropping ------------------", visibility="MESSAGE") text3	
-#@ String(label = " ", choices= {"Automatic (requires identical scan depth)", "Manual"}, style="radioButtonHorizontal", persist=true) cropping
-
-#@ String(value = "--------------- Aponeuroses ---------------", visibility="MESSAGE") text4	
-#@ Integer(label = "Tubeness sigma (default: 10)", value = 10, description="Standard deviation of the Gaussian filter. Proportional to aponeurosis thickness") Tsigma
+#@ String(value = "<html><br> --------------- Aponeuroses --------------- </br></html>", visibility="MESSAGE") text4	
+#@ Integer (label="Tubeness sigma", value=8, style="slider", min=2, max=14, stepSize=2, persist=true, description="Standard deviation of the Gaussian filter. Proportional to aponeurosis thickness") Tsigma
 #@ Boolean(label= "Enhance aponeuroses filter", value=false, persist=true, description="run 'Enhance Local Contrast' plugin (CLAHE). Not recommended unless aponeuroses lack contrast") clahe_ap
 #@ Integer(label="Length (% of FoV width)", value=80, min=50, max=95, stepSize=5, persist=true, description="Expected length of detected aponeuroses relative to FoV width. default: 80%") apLength
-#@ String(label = "Extrapolate from (% of detected aponeurosis length)", choices = {"100%", "50%"}, persist=true, description="") extrapolate_from
+#@ String(label = "Extrapolate from (% of aponeurosis length)", choices = {"100%", "50%"}, persist=true, description="") extrapolate_from
+#@ Boolean(label= "Run an aponeurosis detection test (ONLY SINGLE IMAGES)", value=false, persist=true, description="Pause script to try other aponeurosis detection parameters") apo_test
 
-#@ String(value = "---------------- Fascicles ----------------", visibility="MESSAGE") text5
-#@ Integer(label = "ROI height (% of thickness or 1/2 thickness)", value = 50, min=40, max=90, stepSize=5, persist=true, description="default: 50%") ROIheight
-#@ Integer(label = "ROI width (% of ROI width)", value = 60, min=40, max=90, stepSize=10, persist=true, description="default: 60%") ROIwidth
+#@ String(value = "<html><br> ---------------- Fascicles ---------------- </br></html>", visibility="MESSAGE") text5
+#@ Integer (label="ROI height (% of thickness or 1/2 thickness)", value = 50, style="slider", min=40, max=90, stepSize=5, persist=true) ROIheight
+#@ Integer (label="ROI width (% of ROI width)", value = 60, style="slider", min=40, max=90, stepSize=10, persist=true) ROIwidth
 #@ Boolean(label= "Enhance fascicle filter", value=false, persist=true, description="run 'Enhance Local Contrast' plugin (CLAHE). Not recommended unless fascicles lack contrast") clahe_fasc
-#@ String(label = "Laplacian of Gaussian (sigma)", choices = {"0", "1", "2", "3", "4", "5", "6", "7", "Test"}, value=1, persist=true, description="Proportional to fascicle thickness: after running the test, choosing the value yielding the greatest angle is recommended") Osigma
+#@ String(label = "Laplacian of Gaussian (sigma)", choices = {"0", "1", "2", "3", "4", "5", "6", "7"}, value=1, persist=true, description="Proportional to fascicle thickness: after running the test, choosing the value yielding the greatest angle is recommended") Osigma
 
-#@ String(value = "---------------- Pixel scaling ----------------", visibility="MESSAGE") text6
-#@ String(label = "Scaling", choices = {"None", "Automatic (requires metadata)", "Manual"}, value=None, persist=true) scaling
-#@ String(label = "Scan depth (cm)", choices = {"3", "4", "5", "6", "7"}, value=5, persist=true) depth
-
-#@ String(value = "-------------------- Other --------------------", visibility="MESSAGE") text7
+#@ String(value = "<html><br> -------------------- Other -------------------- </br></html>", visibility="MESSAGE") text7
 #@ Boolean(label="Print analysis parameters", value=true, persist=true, description="Add analysis parameters to the results table") param
+#@ Boolean(label="Display outline of detected fascicle fragments", value=true, persist=true, description="Currently only works with single images") disp_fasc
 #@ Boolean(label="Developper mode", value=false, persist=true, description="Disable batch mode and show intermediate steps of analysis") dev
 */
 
@@ -121,9 +84,11 @@
 var inputFile = "";
 var output = "";
 var input = "";
-var xFoV = 1.5;
+var extension = "";
+var pano_crop = false;
 var is_stack = false;
 var image_titles = newArray();
+var slice_n = newArray();
 var ALPHA = newArray();
 var Lower_aponeurosis_orientation = newArray();
 var Pennation_angle = newArray();
@@ -137,30 +102,31 @@ var ROI_h = newArray();
 var Thresholding = newArray();
 var OrientationJ_sigma = newArray();
 var Error = newArray();
-
+var Upper = "";
+var Lower = "";
+var x_upp = "";
+var x_low = "";
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 macro "SMA - Simple Muscle Architecture" {
 // description
-	plugins = newArray("OrientationJ Measure", "Non-local Means Denoising", "Canny Edge Detector");
+	plugins = newArray("OrientationJ Measure", "MorphoLibJ...", "Non-local Means Denoising", "Canny Edge Detector");
 	check_dependencies(plugins);
 	secondary_gui();
 	clear_results_and_roimanager();
 
-	if (analysis == "Current file" || analysis == "Open file") { 
+	if (analysis == "Current file" || analysis == "Open file") {
 		if (analysis == "Open file") {
 			input = File.getDirectory(inputFile);
 			file = File.getName(inputFile);
 			open_file(input+File.separator+file);
 		}
+
 		handle_stacks();
 		run("Select None"); 
 		run("Remove Overlay");
-		scaleFactor = scale(scaling, "");
-		if (cropping == "Manual") {
-			manual_roi = manual_cropping("");
-		} 		
+		scaleFactor = scale(scaling, ""); 		
 		if (dev == false) {
 			setBatchMode(true);
 		}		
@@ -206,239 +172,65 @@ macro "SMA - Simple Muscle Architecture" {
 
 	function singleImageAnalysis() {
 		
+		start = getTime(); // Use this to time how long the whole code takes for one image
+		title = getTitle();
+		IDraw = getImageID();
+		if (is_stack== true) {
+			slice = getSliceNumber();
+		} else {
+			slice = NaN;
+		}
+
 		if (flip == true)
 			run("Flip Horizontally", "slice");
 
 		if (pano == true) { 
 			// ONLY tested with Philips HD11 and Hologic Mach30
-			// ONLY works without manual cropping (v.221) TODO
-			Wtemp = getWidth; 
-			Htemp = getHeight;
-			dcmScale = 1 / (metadata_scale() * 10); // Retrieve scaling information in DICOM
-			FoV_width = 5;  // 5 cm, arbitrary parameter!!
-			pxl_to_FoV = round(5/dcmScale) * xFoV; // x FoV
-			makeRectangle(Wtemp - pxl_to_FoV, 0, pxl_to_FoV, Htemp); 		
-			run("Crop");
-		}
-
-		start = getTime(); // Use this to time how long the whole code takes for one image
-		title = getTitle();
-		IDraw = getImageID();
-		W = getWidth; 
-		H = getHeight;
-		run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");		
-	
-		//////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// Image Cropping //
-		////////////////////		
-		if (cropping == "Manual") {
-			x = manual_roi[0]; y = manual_roi[1]; width = manual_roi[2]; height = manual_roi[3];
-			Le = x+W*0.005;
-			Up = y+H*0.01; // shifts cropped window down by 1.5% of its height
-			makeRectangle(Le, Up, width*0.99, height*0.98);
-		} else {
-			run("Duplicate...", " ");
-			IDcopy1  = getImageID();
-			run("8-bit");
-			run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");
-			run("Convolve...", "text1=[-1 -1 -1 -1 -1\n-1 -1 -1 -1 -1\n-1 -1 24 -1 -1\n-1 -1 -1 -1 -1\n-1 -1 -1 -1 -1\n] normalize");
-			run("Median...", "radius=2");
-			run("Auto Local Threshold", "method=Median radius=15 parameter_1=0 parameter_2=0 white");
-			run("Options...", "iterations=2 count=1 black do=Close");
-			run("Analyze Particles...", "size=10000-Infinity add");
-			roiManager("Select", 0);
-			getSelectionBounds(x, y, width, height);
-			roiManager("delete");
-			selectImage(IDcopy1); close();
-			run( "Select None" );
-			selectImage(IDraw);
-			Le = x+width*0.005;
-			Up = y+height*0.01; // shifts cropped window down by 1% of its height
-			makeRectangle(Le, Up, width*0.98, height*0.97);			
-		}
-
-		//////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// Filter and detect aponeuroses //
-		///////////////////////////////////
-		run("Duplicate...", " ");					
-		IDFoV = getImageID();		
-		WFoV = getWidth; //Dimensions of the field of view
-		HFoV = getHeight;
-		setColor(0);
-		drawLine(0, 0, WFoV, 0);		
-		minLength = apLength/100*WFoV;
-		
-		// Preprocessing - enhance structures
-		run("8-bit");
-		run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");
-		run("Subtract Background...", "rolling=50 sliding");	
-		run("Non-local Means Denoising", "sigma=15 smoothing_factor=1 auto");
-		run("Bandpass Filter...", "filter_large=40 filter_small=3 suppress=None tolerance=5 saturate");
-		if (clahe_ap == true) {
-			run("Enhance Local Contrast (CLAHE)", "blocksize=36 histogram=256 maximum=4 mask=*None* fast_(less_accurate)");  // necessary for faint aponeuroses
-		}
-		run("Tubeness", "sigma=Tsigma use"); // currently recommended: 10
-		IDvessel1  = getImageID();
-		selectImage(IDvessel1);
-		run("8-bit");
-
-		// Preprocessing - atenuate fascicles
-		// filter out particles with 5 < angle > 50 in quadrant 2
-		run("Duplicate...", " ");	
-		run("Auto Threshold", "method=Default white");
-		run("Median...", "radius=1");					
-		bin  = getImageID();
-		run("Set Measurements...", "fit redirect=None decimal=3");
-		run("Analyze Particles...", "show=Nothing clear record");	
-		for (f=0; f<nResults; f++) {
-			x = getResult("XStart", f);
-		    y = getResult("YStart", f);
-		    angle = getResult("Angle", f);
-		    area = getResult("Area", f);
-			if (angle>130 && angle<175) { 
-		        doWand(x,y);
-		        run("Clear");
-		    }
-		}
-		run("Select None");
-		run("Options...", "iterations=1 count=1 black do=Open");
-		run("Create Selection");
-		selectImage(bin); close();
-		selectImage(IDFoV);							
-		run("Restore Selection");
-		run("Make Inverse");
-		setColor(0);		
-		fill();	
-		run("Select None");
-
-		// Preprocessing - Threshold from FFT
-		run("FFT");
-		IDFFT1 = getImageID();
-		selectImage(IDvessel1); close();
-		selectImage(IDFFT1);
-		Wfft = getWidth;
-		Hfft = getHeight;
-		setThreshold(find_lower_thresh(99.9), 255);
-		setOption("BlackBackground", true);
-		run("Convert to Mask");		
-		setColor(0);
-		makeRectangle(Wfft/2+11, 0, Wfft/2, Hfft/2);		
-		fill();
-		makeRectangle(0, Hfft/2+1, Wfft/2-10, Hfft/2);
-		fill();
-		run("Inverse FFT");
-		IDinvFFT1 = getImageID();
-		selectImage(IDFFT1); close();
-		selectImage(IDinvFFT1);
-		run("Canny Edge Detector", "gaussian=2 low=1 high=7.5"); 			
-		run("Analyze Particles...", "size=0-minLength show=Masks");
-		IDmask = getImageID(); // Mask of shorter lines
-		imageCalculator("Subtract create", IDinvFFT1,IDmask);	
-		IDfilteredAp = getImageID();	
-		selectImage(IDFoV); close();
-		selectImage(IDinvFFT1); close();
-		selectImage(IDmask); close();
-
-		// Start detecting position of aponeuroses
-		selectImage(IDfilteredAp);
-		U = round(0.3*HFoV);
-		V = U + 1;
-		Upper = lineFinder(0, U, 1);	// The 1 is just a dummy variable so the function can distinguish Upper/Lower
-		up_st = newArray(2);
-		up_st[0] = Upper[Upper.length-2];
-		up_st[1] = Upper[Upper.length-1];
-		Upper = Array.slice(Upper, 0, Upper.length-2); // Last 2 elements are line indices
-		
-		Lower = lineFinder(V, HFoV, 0);
-		lo_st = newArray(2);
-		lo_st[0] = Lower[Lower.length-2];
-		lo_st[1] = Lower[Lower.length-1];
-		Lower = Array.slice(Lower, 0, Lower.length-2);
-		
-		ok = 1;
-		selectImage(IDfilteredAp); close();
-		
-		// warn if aponeurosis was not detected
-		err = "";
-		if (Upper.length < 10){
-			ok = 0;
-			if (analysis == "Current file" || analysis == "Open file") {
-				exit("Could not detect upper aponeurosis. Please try again with different value of tubeness sigma or try manual cropping");
-			} else {
-				err = "Could not detect upper aponeurosis. Please try again with different value of tubeness sigma or try manual cropping";
-				Error = Array.concat(Error, title +":"+err);
-				continue;
-			}
-		} else if (Lower.length < 10) {
-			ok = 0;
-			if (analysis == "Current file" || analysis == "Open file") {
-				exit("Could not detect lower aponeurosis. Please try again with different value of tubeness sigma or try manual cropping");
-			} else {
-				err = "Could not detect lower aponeurosis. Please try again with different value of tubeness sigma or try manual cropping";
-				Error = Array.concat(Error, title +":"+err);
-				continue;
-			}
-		}
-		
-		alpha = 0;
-		beta = 0;
-		theta = 0;
-		Lf = 0;
-		Th = 0;
-		
-		if (ok == 1) {
-			L = round(0.05*WFoV);
-			R = round(0.95*WFoV);
-			W2 = R - L;		
-			// Adjust aponeuroses to same length
-			if (Lower.length < Upper.length) {			
-				maxL = Upper.length;
-				Lower2 = newArray(Upper.length);
-				for (t=0; t<Lower.length; t++)
-					Lower2[t] = Lower[t];
-				i1 = Lower[0]; 
-				i2 = Lower[Lower.length-1]; 
-				islope = (i2 - i1) / Lower.length;
-				for (p=Lower.length; p<Upper.length; p++)
-					Lower2[p] = Lower2[p-1] + islope;
-				Lower = Array.copy(Lower2);			
-			} else if (Upper.length < Lower.length) {				
-				maxL = Lower.length;
-				Upper2 = newArray(Lower.length);
-				for (t=0; t<Upper.length; t++)
-					Upper2[t] = Upper[t];
-				i1 = Upper[0]; 
-				i2 = Upper[Upper.length-1]; 
-				islope = (i2 - i1) / Upper.length;
-				for (p=Upper.length; p<Lower.length; p++)
-					Upper2[p] = Upper2[p-1] + islope;
-				Upper = Array.copy(Upper2);
-			} else
-				maxL = Upper.length; // If both aponeuroses are the same length, we can use either length
 			
-			x_upp = newArray(Upper.length); // Create x values for overlay
-			for(t=0; t<Upper.length; t++){
-				Upper[t] = Upper[t] + Up;
-				x_upp[t] = up_st[0] + t + Le;
+			if (pano_crop == true) {
+				setTool("rotrect");
+				if (is("Batch Mode")) {
+					setBatchMode(false);
+				}
+				waitForUser("Select region to crop and press 'OK'");
+				run("Duplicate...", " ");
+				IDcropped = getImageID();
+				selectImage(IDraw); close();
+				IDraw = IDcropped;
+				if (dev == false) {
+					setBatchMode(true);
+				}
 			}
-			x_low = newArray(Lower.length);
-			for(t=0; t<Lower.length; t++){
-				Lower[t] = Lower[t] + Up;
-				x_low[t] = lo_st[0] + t + Le;
-			}
-
-			// select part of aponeuroses to extrapolate from
-			upper_idx1 = 0;
-			lower_idx2 = x_low.length-1;
-			if (extrapolate_from == "100%") {
-				upper_idx2 = x_upp.length-1;
-				lower_idx1 = 0;
-			} else {  // 50%
-				mid_upper = middle_coordinates(x_upp, Upper);
-				mid_lower = middle_coordinates(x_low, Lower);
-				upper_idx2 = mid_upper[2];
-				lower_idx1 = mid_lower[2];
-			}
+		}
+		
+		counter = 0;
+		while (counter == 0) {		
+		
+			selectImage(IDraw);
+			run("Remove Overlay");		
+			W = getWidth; 
+			H = getHeight;
+			run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");		
+		
+			//////////////////////////////////////////////////////////////////////////////////////////////////////////
+			// Image Cropping //
+			////////////////////		
+	
+			crop_boundaries = perform_cropping(cropping, H, W);
+			Le = crop_boundaries[0]; Up = crop_boundaries[1];
+	
+			//////////////////////////////////////////////////////////////////////////////////////////////////////////
+			// Filter and detect aponeuroses //
+			///////////////////////////////////
+	
+			ap_filter = filter_aponeuroses(apLength, clahe_ap, Tsigma);
+			WFoV = ap_filter[0]; HFoV = ap_filter[1]; IDfilteredAp = ap_filter[2];
+	
+			detect_aponeuroses(IDfilteredAp, HFoV, Up, Le, analysis, title);
+	
+			ap_indices = select_indices(extrapolate_from, x_upp, x_low, Upper, Lower);
+			upper_idx1 = ap_indices[0]; upper_idx2 = ap_indices[1]; lower_idx1 = ap_indices[2]; lower_idx2 = ap_indices[3];
+			
 			
 			//Upper aponeurosis line (y_1 = b_1 * x + a_1)
 			Fit.doFit("Straight Line", Array.slice(x_upp, upper_idx1, upper_idx2), Array.slice(Upper, upper_idx1, upper_idx2));
@@ -448,46 +240,61 @@ macro "SMA - Simple Muscle Architecture" {
 			Fit.doFit("Straight Line", Array.slice(x_low, lower_idx1, lower_idx2), Array.slice(Lower, lower_idx1, lower_idx2));
 			a_2 = Fit.p(0); b_2 = Fit.p(1);
 			betaDeep = atan(b_2)* (180/PI); //angle deep aponeurosis
-
-			// In case the lower aponeurosis is not aligned with the upper one
-			if (x_low[0] > x_upp[0]) {
-				x_diff = x_upp[0] - x_low[0];
-				Lower_temp = newArray(x_low.length);
-				for (i = 0; i < Lower_temp.length; i++) {
-					x_low[i] += x_diff;
-					Lower_temp[i] = b_2 * x_low[i] + a_2;
-				}
-				Lower = Lower_temp;
-			}
-			
+				
 			// Plot the curves on top of the existing image	
 			selectImage(IDraw);
 			applyOverlay(Upper, x_upp);
 			applyOverlay(Lower, x_low);
-
-			// rename aponeuroses coordinates arrays 
-			UAx = Array.copy(x_upp); //upper aponeurosis x values
-			UAy = Array.copy(Upper); //upper aponeurosis y values
-			LAx = Array.copy(x_low); //lower aponeurosis x values
-			LAy = Array.copy(Lower); //lower aponeurosis y values
-
-			// calculate mid-distance line between aponeuroses and get equation (2nd order polynom)
-			MAx = Array.copy(UAx);
-			MAy = newArray(UAy.length);
-			for (m=0; m<UAx.length; m++){
-				MAy[m]=UAy[m]+(LAy[m]-UAy[m])*0.5; // @ 0.5 * thickness from top aponeurosis
+	
+			counter = 1;
+			// User check of aponeurosis overlay
+			if (analysis == "Current file" || analysis == "Open file") {  // Only implemented for single image analysis
+				if (apo_test == true && is_stack != true) {  // prevent test on stacks
+					setBatchMode(false);
+					Dialog.createNonBlocking("Pause");
+					Dialog.addChoice("Aponeurosis detection", newArray("Accept and continue", "Try new parameters"), "Accept and continue");
+					Dialog.addSlider("Tubeness sigma", 2, 14, Tsigma);
+					Dialog.addCheckbox("Enhance aponeuroses filter", clahe_ap);
+					Dialog.addSlider("Length (% of FoV width)", 50, 80, apLength);
+					Dialog.addChoice("Extrapolate from (% of aponeurosis length)", newArray("50%", "100%"), extrapolate_from);
+					Dialog.show();
+					status = Dialog.getChoice();
+					if (status == "try new parameters") {
+						Tsigma = Dialog.getNumber();
+						clahe_ap = Dialog.getCheckbox();
+						apLength = Dialog.getNumber();
+						extrapolate_from = Dialog.getString();
+						counter = 0;
+						setBatchMode(true);
+					} else {
+						setBatchMode(true);  // continue analysis
+					}
+				}
 			}
-			//Mid-distance line (y_m = b_m * x + a_m)      
-			b_m = (MAy[0] - MAy[MAx.length-1]) / (MAx[0] - MAx[MAx.length-1]); //slope based on whole aponeurosis
-			a_m = MAy[0] - b_m * MAx[0];
-			betaM = atan(b_m)* (180/PI); //angle mid line
 		}
+		// rename aponeuroses coordinates arrays 
+		UAx = Array.copy(x_upp); //upper aponeurosis x values
+		UAy = Array.copy(Upper); //upper aponeurosis y values
+		LAx = Array.copy(x_low); //lower aponeurosis x values
+		LAy = Array.copy(Lower); //lower aponeurosis y values
+
+		// calculate mid-distance line between aponeuroses and get equation (2nd order polynom)
+		MAx = Array.copy(UAx);
+		MAy = newArray(UAy.length);
+		for (m=0; m<UAx.length; m++){
+			MAy[m]=UAy[m]+(LAy[m]-UAy[m])*0.5; // @ 0.5 * thickness from top aponeurosis
+		}
+		//Mid-distance line (y_m = b_m * x + a_m)      
+		b_m = (MAy[0] - MAy[MAx.length-1]) / (MAx[0] - MAx[MAx.length-1]); //slope based on whole aponeurosis
+		a_m = MAy[0] - b_m * MAx[0];
+		betaM = atan(b_m)* (180/PI); //angle mid line
 	
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// Measure fascicle orientation	//
 		//////////////////////////////////	
-			
+
 		// Select ROI between aponeuroses
+		
 		// retrieve statistics from aponeuroses
 		Array.getStatistics(UAy, minUAy, maxUAy, meanUAy, stdUAy); 
 		Array.getStatistics(LAy, minLAy, maxLAy, meanLAy, stdLAy); 			
@@ -526,120 +333,138 @@ macro "SMA - Simple Muscle Architecture" {
 
 		// make ROI(s) for detection of fascicle angle
 		if (geometry == "Curved_spline" || geometry == "Curved_circle") {
-			makeRectangle(UAxR[0], maxUAyR+5, (UAxR.length-1)*ROIwidth/100, mindistR*ROIheight*0.01); //superficial			
+			makeRectangle(UAxR[0], maxUAyR+5, (UAxR.length-1)*ROIwidth/100, mindistR*ROIheight*0.01);  // ROI closest to superficial insertion (for curved fascicle mode)
 			roiManager("add");
 		}
 		if (geometry == "Straight") {
-			deep_roi_x = UAxR[(UAxR.length-1)*0.5] - (UAxR.length-1)*ROIwidth/100*0.5;
+			deep_roi_x = UAxR[(UAxR.length-1)*0.5] - (UAxR.length-1)*ROIwidth/100*0.5;  // single ROI is centered along FoV width (for straigth fascicle mode)
 		} else {
-			deep_roi_x = UAxR[(UAxR.length-1)*(1-ROIwidth/100)];
+			deep_roi_x = UAxR[(UAxR.length-1)*(1-ROIwidth/100)];  // ROI closest to deep insertion (for curved fascicle mode)
 		}
 		makeRectangle(deep_roi_x, minLAyR-mindistR*(ROIheight+5)*0.01, (UAxR.length-1)*ROIwidth/100, mindistR*ROIheight*0.01); //deep			
-		roiManager("add");				
-		roiManager("show all");
+		roiManager("add");
 
-		// Select fascicle area ROI(s)
-		n = roiManager("count"); 			
-		if (n > 0) {
-			roiManager("Show All");
-			cont = 1; 
+		// process ROI(s)
+		roi_init_n = roiManager("count"); 	
+
+		if (roi_init_n < 1) {
+			exit("ROIs for fascicle detection were not defined");
 		}
-		if (cont > 0) {
-			store = newArray(n);										
-			for (i=2; i<n; i++)  {
-				roiManager("select", i);
-				run("Duplicate...", " ");
-				IDROI  = getImageID();
-				
-				// Preprocessing - enhance structures
-				run("32-bit");
-				run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");
-				run("Subtract Background...", "rolling=50 sliding");
-				run("Non-local Means Denoising", "sigma=15 smoothing_factor=1 auto");
-				if (clahe_fasc == true) {
-					run("Enhance Local Contrast (CLAHE)", "blocksize=54 histogram=256 maximum=32 mask=*None* fast_(less_accurate)");
-				}				
-				run("Median...", "radius=2");	
-				run("Tubeness", "sigma=2 use");
-				run("8-bit");
-				
-				// Preprocessing - atenuate fascicles
-				// filter out particles with angle <50 or > 5 in quadrant 2, or with an area < 50 pxls
-				run("Auto Threshold", "method=Default white");
-				run("Median...", "radius=1");
-				bin  = getImageID();
-				run("Set Measurements...", "fit redirect=None decimal=3");
-				run("Analyze Particles...", "show=Nothing clear record");
-				for (f=0; f<nResults; f++) {
-				    x = getResult("XStart", f);
-				    y = getResult("YStart", f);
-				     angle = getResult("Angle", f);
-				    area = getResult("Area", f);
-				    if (angle<130 || angle>175 || area<50) {
-				        doWand(x,y);
-				        run("Clear");
-				    }
-				}
-				run("Select None");
-				run("Options...", "iterations=1 count=1 black do=Open");
-				run("Create Selection");
-				selectImage(bin); close ();
-				selectImage(IDROI);							
-				run("Restore Selection");
-				run("Make Inverse");
-				setColor(0);		
-				fill();	
-				run("Select None");		
-				run("FFT");
-				IDFFT2 = getImageID();
-				selectImage(IDFFT2);									
-				setThreshold(find_lower_thresh(99.7), 255);  // used to be 99.82
-				run("Convert to Mask");
-				run("Inverse FFT");
-				IDinvFFT2 = getImageID();				
-				selectImage(IDFFT2); close ();
-				selectImage(IDinvFFT2);
-				run("8-bit");
-				n_frangi = 3;  // number of times to run the Frangi filter
-				for (f = 0; f < n_frangi; f++) {
-					temp = getImageID();
-					selectImage(temp);
-					run("Frangi Vesselness (imglib, experimental)", "number=1 minimum=1.000000 maximum=1.000000");
-					selectImage(temp); close();
-				}
-				IDvessel2  = getImageID();
-				selectImage(IDvessel2);	
+		roi_store = newArray(roi_init_n);										
+		for (i=2; i<roi_init_n; i++) {
+			selectImage(IDrawR);
+			start_n = roiManager("count");
+			roiManager("select", i);
+			run("Duplicate...", " ");
+			IDROI  = getImageID();
 
-				// run OrientationJ plugin
-				run("Select All");
-				if (Osigma == "test") {
-					for (o = 0; o < 8; o++) {
-						run("OrientationJ Measure", "sigma="+o);
-					}
-					exit();
-				} else {
-					run("OrientationJ Measure", "sigma="+Osigma);
-				}
-				selectImage(IDvessel2);
-				close ();
-				
-				// retrieve angle values from OrientationJ log window
-				table = getInfo("log"); 					
-				lines = split(table, "\n"); 
-				headings = split(lines[0], "\t"); 
-				values = split(lines[1], "\t");
-				selectWindow("Log");
-				run("Close");
-				store[i] = values[6];
-				store[i] = toString(store[i]);
-				store[i] = replace(store[i], ",", ".");
-				store[i] = parseFloat(store[i]);
+			// Preprocessing - enhance structures
+			run("32-bit");
 
-				selectImage(IDROI);
-				close ();	
+			run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");
+			run("Subtract Background...", "rolling=50 sliding");
+			if (clahe_fasc == true) {
+				run("Enhance Local Contrast (CLAHE)", "blocksize=54 histogram=256 maximum=32 mask=*None* fast_(less_accurate)");
+			}				
+			run("Median...", "radius=2");
+
+			if (Osigma == 0) {
+				filt_sigma = 1;  // unspecific value to run the script when the fasccile filter "Osigma" can't be matched
+			} else {
+				filt_sigma = Osigma;
 			}
+			run("Tubeness", "sigma=filt_sigma use");
+			IDvessel2 = getImageID();
+			selectImage(IDROI); close ();
+			
+			// First directional filter with MorphoLibJ	
+			run("Directional Filtering", "type=Max operation=Opening line=20 direction=2");
+			horizontal_mask_ID = getImageID();
+			selectWindow("Log"); run("Close");
+			imageCalculator("Subtract create", IDvessel2, horizontal_mask_ID);
+			filtered_IDROI = getImageID();
+			selectImage(IDvessel2); close ();
+			selectImage(horizontal_mask_ID); close ();
+
+			// Additional directional filter with FFT
+			run("FFT");
+			IDFFT2 = getImageID();
+			selectImage(IDFFT2);							
+			setThreshold(find_lower_thresh(99.5), 255);  // used to be 99.82
+			run("Convert to Mask");
+			run("Inverse FFT");
+			IDinvFFT2 = getImageID();			
+			selectImage(IDFFT2); close ();
+			selectImage(IDinvFFT2);
+			run("8-bit");				
+			n_frangi = 1;  // number of times to run the Frangi filter
+			for (f = 0; f < n_frangi; f++) {
+				temp = getImageID();
+				selectImage(temp);
+				run("Frangi Vesselness (imglib, experimental)", "number=1 minimum=1.000000 maximum=1.000000");
+				selectImage(temp); close();
+			}
+			IDvessel3  = getImageID();
+			selectImage(IDvessel3);	
+
+			// run OrientationJ plugin
+			run("Select All");
+			run("OrientationJ Measure", "sigma="+Osigma);
+
+			selectImage(IDvessel3); close ();
+
+			// retrieve angle values from OrientationJ log window
+			table = getInfo("log"); 					
+			lines = split(table, "\n"); 
+			headings = split(lines[0], "\t"); 
+			values = split(lines[1], "\t");
+			selectWindow("Log");
+			run("Close");
+			roi_store[i] = values[6];
+			roi_store[i] = toString(roi_store[i]);
+			roi_store[i] = replace(roi_store[i], ",", ".");
+			roi_store[i] = parseFloat(roi_store[i]);
+
+			// outline and list fragments of fascicles processed in the analysis
+			if (disp_fasc == true && is_stack != true) {  // overlay fragments not available yet during stack analyses
+				selectImage(filtered_IDROI);
+				run("8-bit");
+				run("Auto Local Threshold", "method=Otsu radius=15 parameter_1=0 parameter_2=0 white");
+				run("Analyze Particles...", "circularity=0.0-0.5 add");  				
+
+				// calculate translation offsets
+				if (geometry == "Curved_spline" || geometry == "Curved_circle") {
+					if (i == 2) {
+						IDROI_x = UAxR[0]; IDROI_y = maxUAyR+5;  // superficial ROI
+					} else if (i == 3) {
+						IDROI_x = deep_roi_x; IDROI_y = minLAyR-mindistR*(ROIheight+5)*0.01;  // depp ROI
+					}	
+				} else if (geometry == "Straight") {
+					IDROI_x = deep_roi_x; IDROI_y = minLAyR-mindistR*(ROIheight+5)*0.01;
+				}
+				// apply rotation and translation transformations to match original image
+				new_n = roiManager("count");
+				for (j = start_n; j < new_n; j++) {
+				    roiManager("select", j);    
+				    getSelectionBounds(x_temp, y_temp, _, _);
+				    Roi.move(x_temp + IDROI_x, y_temp + IDROI_y);
+					run("Rotate...", "rotate angle=betaDeep");
+					Roi.setStrokeColor("55ffff00");  // set outlines colour to transparent yellow
+					roiManager("update");
+				}
+			}
+			selectImage(filtered_IDROI); close ();
 		}
+			
 		selectImage(IDrawR); close ();
+
+		// add outline of fascicle fragments to the final display
+		selectImage(IDraw);
+		roiManager("select", Array.getSequence(roi_init_n));
+		roiManager("delete");
+		if (roiManager("count") > 0)
+		run("From ROI Manager");
+
 		roiManager("reset");			
 
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -648,8 +473,8 @@ macro "SMA - Simple Muscle Architecture" {
 			
 		if (geometry == "Curved_spline" || geometry == "Curved_circle") {
 		
-			alphaDeep = -store[3]; // with angle due to rotation
-			alphaUp = -store[2];		
+			alphaDeep = -roi_store[3]; // with angle due to rotation
+			alphaUp = -roi_store[2];		
 		    
 			//Pennation angle		
 			thetaDeep = alphaDeep + betaDeep; //orientation of lower part of fasc. relative to deep apon.
@@ -689,25 +514,12 @@ macro "SMA - Simple Muscle Architecture" {
 			Olx = (a_2 - a_Do) / (b_Do - b_2);
 			Oly = a_2 + b_2 * Olx;										
 
-			// From https://forum.image.sc/t/how-do-you-measure-the-angle-of-curvature-of-a-claw/2056/16			
-			// get center of circle passing through fascicles intersection points and mid-depth fascicle point
-			x_centre = (b_Uo*b_Do*(-Ouy+Oly)+b_Uo*(IxFasc+Olx)-b_Do*(IxFasc+Oux))/(2*(b_Uo-b_Do));
-			y_centre = -1/b_Uo*(x_centre-(IxFasc+Oux)/2)+(IyFasc+Ouy)/2;
-			
-			// angle, slope and intercept of segments between circle centre and fascicle intersections, and angle (gamma) between them
-			b_centreUp = (y_centre - Ouy) / (x_centre - Oux);
-			a_centreUp = -(y_centre - Ouy) / (x_centre - Oux) * x_centre + y_centre;	
-			ang_Up = atan(b_centreUp)* (180/PI); //angle superficial segment				
-			b_centreDeep = (y_centre - Oly) / (x_centre - Olx);
-			a_centreDeep = -(y_centre - Oly) / (x_centre - Olx) * x_centre + y_centre;
-			ang_Deep = atan(b_centreDeep)* (180/PI); //angle deep segment	
-			
-			tan_gamma = abs((b_centreUp-b_centreDeep)/(1+b_centreDeep*b_centreUp));
-			gamma = atan(tan_gamma)* (180/PI);
-			
-			//radius, axes, curvature and fascicle length
-			r = sqrt((x_centre-Oux)*(x_centre-Oux) + (y_centre-Ouy)*(y_centre-Ouy)); //radius (to upper insertion)
-			r2 = sqrt((x_centre-Olx)*(x_centre-Olx) + (y_centre-Oly)*(y_centre-Oly)); //radius (to lower insertion)				
+
+			// centre, radius, curvature and fascicle length
+			xs = newArray(Oux,IxFasc,Olx); ys = newArray(Ouy,IyFasc,Oly);
+			centre = getCircleCenter(xs, ys);
+			x_centre = centre[0]; y_centre = centre[1];
+			r = sqrt((x_centre-Oux)*(x_centre-Oux) + (y_centre-Ouy)*(y_centre-Ouy)); //radius
 			if (y_centre > 0) { //fascicle curved towards upper aponeurosis
 				Crv = 1/r; //curvature
 			} else {
@@ -715,34 +527,29 @@ macro "SMA - Simple Muscle Architecture" {
 			}
 			
 			if (geometry == "Curved_circle") { 
-				Lf = 2*PI*r*(gamma/360);
-				c_x = newArray(round(gamma+1));
-				c_y = newArray(round(gamma+1));
-				if (y_centre > 0) {
-					for (i = 0; i < round(gamma)+1; i++) {
-					c_x[i]  =  x_centre + r * cos((abs(ang_Deep)+i)*PI/180);
-					c_y[i]  =  y_centre - r * sin((abs(ang_Deep)+i)*PI/180); // "-" because the Y origin points downwards
-					}
-				} else {
-					for (i = 0; i < round(gamma)+1; i++) {
-					c_x[i]  =  x_centre - r * cos((abs(ang_Up)+i)*PI/180);
-					c_y[i]  =  y_centre + r * sin((abs(ang_Up)+i)*PI/180); // "-" because the Y origin points downwards
-					}
+				theta1 = atan2(Ouy - y_centre, Oux - x_centre);
+				theta2 = atan2(Oly - y_centre, Olx - x_centre);
+				c_x = newArray();
+				c_y = newArray();
+				for (t = theta1; t <= theta2; t += 0.001) {
+				    x = x_centre + r * cos(t);
+				    y = y_centre + r * sin(t);
+				    c_x = Array.concat(c_x, x);
+				    c_y = Array.concat(c_y, y);
 				}
-				makeSelection(7, c_x, c_y); // make circle arc
-				roiManager("add");
-														
-			} else { // Spline
-				makeSelection("polyline", newArray(Oux,IxFasc,Olx), newArray(Ouy,IyFasc,Oly));
-				run("Fit Spline");
-				run("Interpolate");
-				List.setMeasurements;
-				Lf = List.getValue("Length");				
-				roiManager("add");
+				xs = c_x; ys = c_y;  // redefine xs and ys as coordinates of arch						
 			} 
+
+			makeSelection("polyline", xs, ys);
+			run("Fit Spline");
+			run("Interpolate");
+			List.setMeasurements;
+			Lf = List.getValue("Length");				
+			roiManager("add");
+			
 		
 		} else { //if fascicles are analysed as straight lines
-			alphaDeep = -store[2];			
+			alphaDeep = -roi_store[2];			
 		    
 			//Pennation angle
 			theta = alphaDeep + betaDeep;	
@@ -855,6 +662,7 @@ macro "SMA - Simple Muscle Architecture" {
 		// Save variables of interest
 		if (geometry == "Curved_spline" || geometry == "Curved_circle") {		
 			image_titles = Array.concat(image_titles, title);
+			slice_n = Array.concat(slice_n, slice);
 			Lower_aponeurosis_orientation = Array.concat(Lower_aponeurosis_orientation, betaDeep);
 			Pennation_angle = Array.concat(Pennation_angle, alphaDeep);
 			Fascicle_length = Array.concat(Fascicle_length, Lf);
@@ -867,6 +675,7 @@ macro "SMA - Simple Muscle Architecture" {
 			OrientationJ_sigma = Array.concat(OrientationJ_sigma, Osigma);
 		} else {  // process folder
 			image_titles = Array.concat(image_titles, title);
+			slice_n = Array.concat(slice_n, slice);
 			Lower_aponeurosis_orientation = Array.concat(Lower_aponeurosis_orientation, betaDeep);
 			Pennation_angle = Array.concat(Pennation_angle, alphaDeep);		
 			Fascicle_length = Array.concat(Fascicle_length, Lf);
@@ -885,7 +694,7 @@ macro "SMA - Simple Muscle Architecture" {
 		run("From ROI Manager");
 	    if (analysis == "Open folder") {
 			run("Flatten", "stack");
-			saveAs("tiff", output + File.separator + file);
+			saveAs("tiff", output + file);
 			roiManager("reset");
 			close("*");
 		} else {
@@ -913,6 +722,7 @@ macro "SMA - Simple Muscle Architecture" {
 		if (param == false) {
 			Array.show("Results",
 			image_titles,
+			slice_n,
 			Lower_aponeurosis_orientation,
 			Pennation_angle,
 			Fascicle_length,
@@ -922,6 +732,7 @@ macro "SMA - Simple Muscle Architecture" {
 		} else {
 			Array.show("Results",
 			image_titles,
+			slice_n,
 			Lower_aponeurosis_orientation,	
 			Pennation_angle,
 			Fascicle_length,
@@ -956,10 +767,10 @@ macro "SMA - Simple Muscle Architecture" {
 	  
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Help functions //
+// FUNCTIONS //
 ////////////////////
 
-function check_dependencies(deps) { //TODO
+function check_dependencies(deps) {
 // function description
 	missing = newArray();
 	List.setCommands; 
@@ -972,10 +783,11 @@ function check_dependencies(deps) { //TODO
 		exit("SMA requires the following plugins:"
 			+"\n "
 			+"\n- OrientationJ,"
-			+"\n- Non-local Means Denoising,"
 			+"\n- Canny Edge Detector"
+			+"\n- MorphoLiJ"
+			+"\n- Non-local Means Denoising,"
 			+"\n "
-			+"\nPlease chack that the update sites 'BIG-EPFL', 'Biomedgroup' and 'BioVoxxel' are selected."
+			+"\nPlease check that the update sites 'BIG-EPFL', IJPB-plugins, 'Biomedgroup' and 'BioVoxxel' are selected."
 			+"\n\"https://imagej.net/Following_an_update_site.html\"");
 	}
 }
@@ -1006,14 +818,12 @@ function countFiles(input) {
 
 
 function open_file(path)	{
-// Open single DICOM file
-//	if (extension == "" || extension == ".dcm") {
-	splitted = split(path, ".");
-	if (path.endsWith(".dcm") || splitted.length == 1) {
-		print(File.getName(path));
-		run("Bio-Formats","open=path autoscale color_mode=Default open_files view=Hyperstack stack_order=XYCZT");
-		unstack_channels();
-	} else if (path.endsWith(".avi")) {
+// Open any file, including DICOM and movies
+	splitted = split(File.getName(path), ".");
+	if (path.endsWith(".dcm") || splitted.length == 1) {  // extension is .dcm or none
+		run("Bio-Formats Importer", "open=path autoscale color_mode=Default open_files rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
+		unstack_color_channels();
+	} else if (path.endsWith(".avi") | path.endsWith(".mp4")) {
 		run("Movie (FFMPEG)...", "choose=[path] first_frame=0 last_frame=-1");
 	} else {
 		open(path);
@@ -1021,14 +831,13 @@ function open_file(path)	{
 }
 
 
-function unstack_channels() { 
+function unstack_color_channels() { 
 // convert image stack to RGB image
 	title = getTitle();
 	getDimensions(im_width, im_height, im_channels, im_slices, im_frames);
 	if (im_channels > 1) {
-		run("Stack to RGB");
+		run("Stack to RGB", "slices");
 		run("8-bit");
-		selectWindow(title); close();
 	}
 }
 
@@ -1053,13 +862,14 @@ function scale(scaling_mode, folder_path) {
 
 function manual_cropping(folder_path) {
 // function description
-	if (folder_path.length > 0) {
+	if (folder_path.length > 0) {  // process folder
 		list = getFileList(folder_path);
 		open_file(folder_path+File.separator+list[0]);
 		if (flip == true) {
 			run("Flip Horizontally");
 		}
 	} else if (is_stack == true) {
+		setBatchMode(false);
 		run("Duplicate...", " ");
 		if (flip == true) {
 			run("Flip Horizontally");
@@ -1068,10 +878,234 @@ function manual_cropping(folder_path) {
 	setTool("rectangle"); 
 	waitForUser("Select area. Click OK when done");
 	Roi.getBounds(x, y, width, height);
+	setBatchMode(true);
 	if (folder_path.length > 0 || is_stack == true) {
 		close ();
 	}
 	return newArray(x, y, width, height);		
+}
+
+
+function perform_cropping(cropping, H, W) {
+	/**
+	 * This function performs cropping on an image based on the input parameters.
+	 *
+	 * cropping - The type of cropping to be performed; "Manual" or "Automatic".
+	 * W - The width of the cropping window; used as an offset in the calculation of the left edge of the cropping rectangle.
+	 * H - The height of the cropping window; used as an offset in the calculation of the top edge of the cropping rectangle.
+	 *
+	 * If the 'cropping' parameter is "Manual", the function performs manual cropping.
+	 * If the 'cropping' parameter is "Automatic", the function performs automatic cropping.
+	 *
+	 * The function returns an array containing the left (Le) and top (Up) coordinates of the cropping rectangle.
+	 *
+	 * returns an array containing two elements: the left (Le) and top (Up) coordinates of the cropping rectangle.
+	 */
+    if (cropping == "Manual") {
+        manual_roi = manual_cropping("");
+        x = manual_roi[0]; y = manual_roi[1]; width = manual_roi[2]; height = manual_roi[3];
+        Le = x+W*0.005;
+        Up = y+H*0.01; // shifts cropped window down by offset
+        makeRectangle(Le, Up, width*0.99, height*0.98);
+    } else {  // Automatic detection of FoV
+        run("Duplicate...", " ");
+        IDcopy1  = getImageID();
+        run("8-bit");
+        run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");
+        run("Convolve...", "text1=[-1 -1 -1 -1 -1\n-1 -1 -1 -1 -1\n-1 -1 24 -1 -1\n-1 -1 -1 -1 -1\n-1 -1 -1 -1 -1\n] normalize");
+        run("Median...", "radius=2");
+        run("Auto Local Threshold", "method=Median radius=15 parameter_1=0 parameter_2=0 white");
+        run("Options...", "iterations=3 count=1 black do=Close");
+        run("Analyze Particles...", "size=10000-Infinity add");
+        roiManager("Select", 0);
+        getSelectionBounds(x, y, width, height);
+        roiManager("delete");
+        selectImage(IDcopy1); close();
+        run( "Select None" );
+        selectImage(IDraw);
+        Le = x+width*0.005;
+        Up = y+height*0.01; // shifts cropped window down by offset proportional to height
+        makeRectangle(Le, Up, width*0.98, height*0.97);
+    }
+    return newArray(Le, Up);
+}
+
+
+function enhance_filter(clahe_ap, Tsigma) { 
+// Apply various filter to enhance aponeuroses and return image ID of filtered image
+	run("8-bit");
+    run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");
+    run("Subtract Background...", "rolling=50 sliding");	
+    run("Non-local Means Denoising", "sigma=15 smoothing_factor=1 auto");
+    run("Bandpass Filter...", "filter_large=40 filter_small=3 suppress=None tolerance=5 saturate");
+    if (clahe_ap == true) {
+        run("Enhance Local Contrast (CLAHE)", "blocksize=36 histogram=256 maximum=4 mask=*None* fast_(less_accurate)");  // necessary for faint aponeuroses
+    }
+    run("Tubeness", "sigma=Tsigma use"); // start with 8
+    IDvessel1  = getImageID();
+    selectImage(IDvessel1);
+    run("8-bit");
+    
+    return IDvessel1
+}
+
+
+// TODO: keep adjusting morpholibj filter
+function filter_aponeuroses(apLength, clahe_ap, Tsigma) {
+    run("Duplicate...", " ");					
+    IDFoV = getImageID();		
+    WFoV = getWidth; //Dimensions of the field of view
+    HFoV = getHeight;
+    setColor(0);
+    drawLine(0, 0, WFoV, 0);		
+    minLength = apLength/100*WFoV;
+
+    // Preprocessing - enhance structures
+	IDvessel1 = enhance_filter(clahe_ap, Tsigma);
+	selectImage(IDFoV); close();
+	
+    // Directional filter
+	fragment_length = WFoV / 10;
+//	fragment_length = minLength;
+	run("Directional Filtering", "type=Max operation=Opening line=fragment_length direction=2");
+	selectImage(IDvessel1); close();
+	IDvessel1  = getImageID();
+	selectWindow("Log"); run("Close");
+    // Preprocessing - Threshold from FFT
+    run("FFT");
+    IDFFT1 = getImageID();
+    selectImage(IDvessel1); close();
+    selectImage(IDFFT1);
+    Wfft = getWidth;
+    Hfft = getHeight;
+    setThreshold(find_lower_thresh(99.5), 255);	 // changed to suit MorpholibJ filter
+    setOption("BlackBackground", true);
+    run("Convert to Mask");		
+    setColor(0);
+    makeRectangle(Wfft/2+11, 0, Wfft/2, Hfft/2);		
+    fill();
+    makeRectangle(0, Hfft/2+1, Wfft/2-10, Hfft/2);
+    fill();
+    run("Inverse FFT");
+    IDinvFFT1 = getImageID();
+    selectImage(IDFFT1); close();
+    selectImage(IDinvFFT1);
+    run("Canny Edge Detector", "gaussian=2 low=2.5 high=7.5");	 // changed to suit MorpholibJ filter
+    run("Analyze Particles...", "size=0-minLength show=Masks");
+    IDmask = getImageID(); // Mask of shorter lines		
+    imageCalculator("Subtract create", IDinvFFT1, IDmask);	
+    IDfilteredAp = getImageID();
+    selectImage(IDinvFFT1); close();
+    selectImage(IDmask); close();
+
+    return newArray(WFoV, HFoV, IDfilteredAp);
+}
+
+
+
+function detect_aponeuroses(IDfilteredAp, HFoV, Up, Le, analysis, title) {
+    // Start detecting position of aponeuroses
+    selectImage(IDfilteredAp);
+    U = round(0.3*HFoV);
+    V = U + 1;
+    Upper = lineFinder(0, U, 1);  // Call to lineFinder function. The 1 is just a dummy variable so the function can distinguish Upper/Lower
+    up_st = newArray(2);
+    up_st[0] = Upper[Upper.length-2];
+    up_st[1] = Upper[Upper.length-1];
+    Upper = Array.slice(Upper, 0, Upper.length-2); // Last 2 elements are line indices
+    
+    Lower = lineFinder(V, HFoV, 0);
+    lo_st = newArray(2);
+    lo_st[0] = Lower[Lower.length-2];
+    lo_st[1] = Lower[Lower.length-1];
+    Lower = Array.slice(Lower, 0, Lower.length-2);
+    
+    ok = 1;
+    selectImage(IDfilteredAp); close();
+    
+    // warn if aponeurosis was not detected
+    err = "";
+    if (Upper.length < 10){
+        ok = 0;
+        if (analysis == "Current file" || analysis == "Open file") {
+            exit("Could not detect upper aponeurosis. Please try again with different value of tubeness sigma or try manual cropping");
+        } else {
+            err = "Could not detect upper aponeurosis. Please try again with different value of tubeness sigma or try manual cropping";
+            Error = Array.concat(Error, title +":"+err);
+            continue;
+        }
+    } else if (Lower.length < 10) {
+        ok = 0;
+        if (analysis == "Current file" || analysis == "Open file") {
+            exit("Could not detect lower aponeurosis. Please try again with different value of tubeness sigma or try manual cropping");
+        } else {
+            err = "Could not detect lower aponeurosis. Please try again with different value of tubeness sigma or try manual cropping";
+            Error = Array.concat(Error, title +":"+err);
+            continue;
+        }
+    }
+    
+    if (ok == 1) {
+        L = round(0.05*WFoV);
+        R = round(0.95*WFoV);
+        W2 = R - L;		
+        // Adjust aponeuroses to same length
+        if (Lower.length < Upper.length) {			
+            maxL = Upper.length;
+            Lower2 = newArray(Upper.length);
+            for (t=0; t<Lower.length; t++)
+                Lower2[t] = Lower[t];
+            i1 = Lower[0]; 
+            i2 = Lower[Lower.length-1]; 
+            islope = (i2 - i1) / Lower.length;
+            for (p=Lower.length; p<Upper.length; p++)
+                Lower2[p] = Lower2[p-1] + islope;
+            Lower = Array.copy(Lower2);			
+        } else if (Upper.length < Lower.length) {				
+            maxL = Lower.length;
+            Upper2 = newArray(Lower.length);
+            for (t=0; t<Upper.length; t++)
+                Upper2[t] = Upper[t];
+            i1 = Upper[0]; 
+            i2 = Upper[Upper.length-1]; 
+            islope = (i2 - i1) / Upper.length;
+            for (p=Upper.length; p<Lower.length; p++)
+                Upper2[p] = Upper2[p-1] + islope;
+            Upper = Array.copy(Upper2);
+        } else
+            maxL = Upper.length; // If both aponeuroses are the same length, we can use either length
+        
+        x_upp = newArray(Upper.length); // Create x values for overlay
+        for(t=0; t<Upper.length; t++){
+            Upper[t] = Upper[t] + Up;
+            x_upp[t] = up_st[0] + t + Le;
+        }
+        x_low = newArray(Lower.length);
+        for(t=0; t<Lower.length; t++){
+            Lower[t] = Lower[t] + Up;
+            x_low[t] = lo_st[0] + t + Le;
+        }
+    }
+
+}
+
+
+function select_indices(extrapolate_from, x_upp, x_low, Upper, Lower) {
+    // Select indices of aponeuroses lines to extrapolate from
+    upper_idx1 = 0;
+    lower_idx2 = x_low.length-1;
+    if (extrapolate_from == "100%") {
+        upper_idx2 = x_upp.length-1;
+        lower_idx1 = 0;
+    } else {  // 50%
+        mid_upper = middle_coordinates(x_upp, Upper);
+        mid_lower = middle_coordinates(x_low, Lower);
+        upper_idx2 = mid_upper[2];
+        lower_idx1 = mid_lower[2];
+//      upper_idx2 = Math.floor(x_upp.length / 2);
+//      lower_idx1 = Math.floor(x_low.length / 2);
+    }
+    return newArray(upper_idx1, upper_idx2, lower_idx1, lower_idx2);
 }
 
 
@@ -1315,6 +1349,33 @@ function index(a1, a2, value, condition) {
 } 
 
 
+function getCircleCenter(xs, ys) {
+    // Calculate midpoints of the two lines
+    midPoint1x = (xs[0] + xs[1]) / 2;
+    midPoint1y = (ys[0] + ys[1]) / 2;
+    midPoint2x = (xs[1] + xs[2]) / 2;
+    midPoint2y = (ys[1] + ys[2]) / 2;
+
+    // Calculate the slopes of the two lines
+    slope1 = (ys[1] - ys[0]) / (xs[1] - xs[0]);
+    slope2 = (ys[2] - ys[1]) / (xs[2] - xs[1]);
+
+    // Calculate the slopes of the perpendicular bisectors
+    perpBisectorSlope1 = -1 / slope1;
+    perpBisectorSlope2 = -1 / slope2;
+
+    // Calculate the y-intercepts of the perpendicular bisectors
+    yIntercept1 = midPoint1y - perpBisectorSlope1 * midPoint1x;
+    yIntercept2 = midPoint2y - perpBisectorSlope2 * midPoint2x;
+
+    // The center of the circle is the intersection of the two perpendicular bisectors
+    x_centre = (yIntercept2 - yIntercept1) / (perpBisectorSlope1 - perpBisectorSlope2);
+    y_centre = perpBisectorSlope1 * x_centre + yIntercept1;
+
+    return newArray(x_centre, y_centre);
+}
+
+
 function middle_coordinates(xPoints, yPoints) {
 // 
 	nPoints = xPoints.length - 1;
@@ -1346,12 +1407,28 @@ function middle_coordinates(xPoints, yPoints) {
 function metadata_scale() { 
 // function description
 	metadata = getMetadata("Info");
-	if (metadata.length > 0) {
-		dcmScale = parseFloat(getInfo("Physical Delta X"));  // original scale in cm
+	if (metadata.length > 200) {  // DICOM metadata are typically larger
+		if (getInfo("Physical Delta X #1") > 0) {
+			scaling_tag = "Physical Delta X #1";
+		} else if (getInfo("Physical Delta X") > 0) {
+			scaling_tag = "Physical Delta X";
+		}
+		dcmScale = parseFloat(getInfo(scaling_tag));  // original scale in cm/pxl
+		scaling_factor = 1/dcmScale/10;  // scaling factor in pxl/mm
 	} else {
-		exit("No metadata data were found and the scaling can't be done automatically");
+		Dialog.create("No metadata");
+		Dialog.addRadioButtonGroup("", newArray("No scaling", "Set scale manually", "Exit"), 1, 3, "No scaling")
+		Dialog.show();
+		action = Dialog.getRadioButton();
+		if (action == "No scaling") {
+			scaling_factor = 1;
+		} else if (action == "Set scale manually") {
+			scaling_factor = userscale();  // scaling factor in pxl/mm
+		} else {
+			exit("Analysis process ended");
+		}
 	}
-	return 1/dcmScale/10;  // scaling factor
+	return scaling_factor;  // scaling factor in pxl/mm
 }
 
 
@@ -1359,10 +1436,23 @@ function userscale() {
 // function description
 	run("Select None");
 	setTool("line");
-	waitForUser("Select scaling line. Click OK when done");
+
+	load_settings_file();
+	Dialog.createNonBlocking("Manual scaling");
+	Dialog.setLocation(0, 0);
+	Dialog.addSlider("Scaling distance (cm)", 2, 10, List.getValue("scale_distance"));
+	Dialog.addMessage("<html><b> Draw a line over the scaling distance </b> <br> (usually, over the scaling graduation over or on the side of the field of view) </br></html>");
+	Dialog.show();
+	scale_distance = Dialog.getNumber(); List.set("scale_distance", scale_distance);
+	update_settings_file();
+	List.clear();
+
 	getLine(x1, y1, x2, y2, lineWidth);
+	if (x1 == -1) {
+		userscale();
+	}
 	lineLength = sqrt(pow(x1-x2, 2) + pow(y1-y2, 2));
-	return lineLength/(parseInt(depth)*10);
+	return lineLength/(parseInt(scale_distance)*10);  // scaling factor in pxl/mm
 }
 
 
@@ -1378,6 +1468,7 @@ function handle_stacks() {
 	is_stack = true;
 	
 	Dialog.createNonBlocking("Image stack");
+	Dialog.addCheckbox("Flip image horizontally", flip);
 	choices = newArray("Current frame only", "Multiple frames");
 	Dialog.addRadioButtonGroup("Process:", choices, 2, 1, "Current frame only");
 	Dialog.addSlider("start", 1, nSlices, 1);
@@ -1385,13 +1476,14 @@ function handle_stacks() {
 	Dialog.addMessage("Alternatively, enter comma-separated frame numbers");
 	Dialog.addString("Discrete frames", "", 4);
 	Dialog.show();
+	flip = Dialog.getCheckbox();
 	target = Dialog.getRadioButton();
 	start = Dialog.getNumber();
 	end = Dialog.getNumber();
 	slices_string = Dialog.getString();
 
 	if (target == "Current frame only") {
-		end = 1;
+		start = getSliceNumber(); end = start;
 	}
 	if (slices_string != "") {
 		slices = split(slices_string, ",");
@@ -1401,12 +1493,11 @@ function handle_stacks() {
 		start = 0; end = slices.length - 1;
 	}
 	scaleFactor = scale(scaling, "");
-	if (cropping == "Manual") {
-		manual_roi = manual_cropping("");
-	} 
+
 	if (dev == false) {
 		setBatchMode(true);
 	}
+	run("Remove Overlay");
 	for (slice_number=start; slice_number<end+1; slice_number++) {
 		if (slices_string != "") {
 			Stack.setSlice(slices[slice_number]);
@@ -1431,13 +1522,14 @@ function create_settings_log(logpath) {
 	var_names = newArray(  // list variables names and default values
 		"flip", 
 		"pano", 
-		"xFoV", 
+		"pano_crop",
 		"geometry", 
 		"analysis", 
 		"extension",
 		"inputFile",
 		"input",
 		"output",
+		"extension",
 		"cropping",
 		"Tsigma",
 		"clahe_ap",
@@ -1446,22 +1538,25 @@ function create_settings_log(logpath) {
 		"ROIheight",
 		"ROIwidth",
 		"clahe_fasc",
+		"n_frangi",
 		"Osigma",
 		"scaling",
-		"depth",
+		"scale_distance",
 		"param",
+		"disp_fasc",
 		"dev");
 	
 	vars = newArray(
 		false, 
-		false, 
-		1.5, 
+		false,
+		false,
 		"Straight", 
 		"Current file", 
 		".tif",
 		getDir("downloads"),
 		getDir("downloads"),
 		getDir("downloads"),
+		".tif",
 		"Automatic (requires identical scan depth)",
 		10,
 		false,
@@ -1470,9 +1565,11 @@ function create_settings_log(logpath) {
 		"50",
 		"60",
 		false,
+		1,  // number of times to run the Frangi filter
 		"1",
 		"None",
 		"5",
+		true,
 		true,
 		false);
 		  
@@ -1490,7 +1587,6 @@ function load_settings_file() {
 // function description
 	logpath = getDir("plugins")+"SMA_prefs.txt";  // set settings log path
 	if(!File.exists(logpath)) {
-		//print(logpath+" does not exists");
 		create_settings_log(logpath);
 	}
 	logstring = File.openAsString(logpath);
@@ -1513,11 +1609,10 @@ function secondary_gui() {
 		Dialog.createNonBlocking("Additional settings");
 		
 		if (pano == true) {
-			Dialog.addMessage("Sub-selection of panoramic scan (experimental)");
+			Dialog.addMessage("Subselection of panoramic scan");
 			Dialog.setInsets(0, 0, 20);
-			Dialog.addSlider("x field of view", 1.0, 2.0, List.getValue("xFoV"));
+			Dialog.addCheckbox("Pre-crop image", List.getValue("pano_crop"));
 		}
-		
 		if (analysis == "Open file") {
 			Dialog.addFile("Select a file", List.getValue("inputFile"));
 		} else if (analysis == "Open folder") {
@@ -1528,9 +1623,9 @@ function secondary_gui() {
 		
 		Dialog.show();
 			
-		if (pano == true)
-			xFoV = Dialog.getNumber(); List.set("xFoV", xFoV);
-			
+		if (pano == true) {
+			pano_crop = Dialog.getCheckbox(); List.set("pano_crop", pano_crop);
+		}
 		if (analysis == "Open file") {
 			inputFile = Dialog.getString(); List.set("inputFile", inputFile);
 		} else if (analysis == "Open folder") {
