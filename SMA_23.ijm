@@ -87,6 +87,8 @@ var input = "";
 var extension = "";
 var pano_crop = false;
 var is_stack = false;
+var manual_stack_crop = "Whole stack";
+var fixed_ROI = newArray();
 var image_titles = newArray();
 var slice_n = newArray();
 var ALPHA = newArray();
@@ -869,20 +871,28 @@ function manual_cropping(folder_path) {
 			run("Flip Horizontally");
 		}
 	} else if (is_stack == true) {
-		setBatchMode(false);
-		run("Duplicate...", " ");
-		if (flip == true) {
-			run("Flip Horizontally");
+		if (fixed_ROI.length == 0) {
+			setBatchMode(false);
+			run("Duplicate...", " ");
+			if (flip == true) {
+				run("Flip Horizontally");
+			}
+		} else {  // manual_stack_crop == "Whole stack"
+			return fixed_ROI;
 		}
 	}
 	setTool("rectangle"); 
 	waitForUser("Select area. Click OK when done");
 	Roi.getBounds(x, y, width, height);
+	roi_coords = newArray(x, y, width, height);
+	if (manual_stack_crop == "Whole stack") { 
+		fixed_ROI = Array.concat(fixed_ROI,roi_coords);
+	}
 	setBatchMode(true);
 	if (folder_path.length > 0 || is_stack == true) {
 		close ();
 	}
-	return newArray(x, y, width, height);		
+	return roi_coords;		
 }
 
 
@@ -896,8 +906,6 @@ function perform_cropping(cropping, H, W) {
 	 *
 	 * If the 'cropping' parameter is "Manual", the function performs manual cropping.
 	 * If the 'cropping' parameter is "Automatic", the function performs automatic cropping.
-	 *
-	 * The function returns an array containing the left (Le) and top (Up) coordinates of the cropping rectangle.
 	 *
 	 * returns an array containing two elements: the left (Le) and top (Up) coordinates of the cropping rectangle.
 	 */
@@ -921,7 +929,7 @@ function perform_cropping(cropping, H, W) {
         getSelectionBounds(x, y, width, height);
         roiManager("delete");
         selectImage(IDcopy1); close();
-        run( "Select None" );
+        run("Select None");
         selectImage(IDraw);
         Le = x+width*0.005;
         Up = y+height*0.01; // shifts cropped window down by offset proportional to height
@@ -1469,14 +1477,21 @@ function handle_stacks() {
 	
 	Dialog.createNonBlocking("Image stack");
 	Dialog.addCheckbox("Flip image horizontally", flip);
-	choices = newArray("Current frame only", "Multiple frames");
-	Dialog.addRadioButtonGroup("Process:", choices, 2, 1, "Current frame only");
+	if (cropping == "Manual") {
+		choices1 = newArray("Each frame", "Whole stack");
+		Dialog.addRadioButtonGroup("Set manual cropping for:", choices1, 2, 1, "Whole stack");
+	}
+	choices2 = newArray("Current frame only", "Multiple frames");
+	Dialog.addRadioButtonGroup("Process:", choices2, 2, 1, "Current frame only");
 	Dialog.addSlider("start", 1, nSlices, 1);
 	Dialog.addSlider("end", 1, nSlices, nSlices);
 	Dialog.addMessage("Alternatively, enter comma-separated frame numbers");
 	Dialog.addString("Discrete frames", "", 4);
 	Dialog.show();
 	flip = Dialog.getCheckbox();
+	if (cropping == "Manual") {
+		manual_stack_crop = Dialog.getRadioButton();
+	}
 	target = Dialog.getRadioButton();
 	start = Dialog.getNumber();
 	end = Dialog.getNumber();
