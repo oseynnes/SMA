@@ -1,5 +1,12 @@
 # Changelog
 
+## 2024-03-15
+Version 2.3.1  
+ **NB: this version changes the analysis methods and the results are different from previous versions**  
+- Small adjustment of FFT filter to segment fascicles  
+- Add function to save processed stacks as AVI  
+- Fix various bugs  
+- KNOWN REMAINING BUG: the display of the detected fascicle fragments stopped working properly. This does not affect the result and will be fixed with a future update  
 
 ## 2024-03-08
 

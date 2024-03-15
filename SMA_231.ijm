@@ -30,19 +30,13 @@
 // Change log //
 ////////////////
 /*
- *  Version 2.3
+ *  Version 2.3.1
  *  *NB: this version changes the analysis methods and the results are different from previous versions*
- *  - Add fascicle detection outline at the end of analysis
- *  - Add possibility to let user test and adjust parameters for aponeurosis detection.
- *  - Add manual cropping for panoramic scans
- *  - Revert fix for aponeuroses display in version 2.2.1 because it prevented analysis of panoramic scans
- *  - Improve aponeuroses and fascicle prefiltering by using MorphoLibJ plugin instead of custom directional filter
- *  - Improve fascicle prefiltering
- *  	The sigma value of the vesselness filter now matches the chosen sigma used for the Laplacian of Gaussian.
- *  	This make the prefiltering somewhat adapted to expected fascicle thickness.
- *  	The "test" function for the Laplacian of Gaussian value was removed as it could not be maintained with this change.
- *  	One of the filtering steps was also removed as it was not improving detection.
+ *  - Small adjustment of FFT filter to segment fascicles
+ *  - Add function to save processed stacks as AVI.
  *  - Fix various bugs
+ *  - KNOWN REMAINING BUG: the display of the detected fascicle fragments stopped working properly. This does not affect the result.
+ *  will be fixed with a future update.
  * 
  */
 
@@ -205,25 +199,27 @@ macro "SMA - Simple Muscle Architecture" {
 			}
 		}
 		
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// Image Cropping - Filter and detect aponeuroses //
+		////////////////////////////////////////////////////
+		
 		counter = 0;
 		while (counter == 0) {		
 		
 			selectImage(IDraw);
-			run("Remove Overlay");		
+//			run("Remove Overlay");
 			W = getWidth; 
 			H = getHeight;
 			run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");		
 		
-			//////////////////////////////////////////////////////////////////////////////////////////////////////////
-			// Image Cropping //
-			////////////////////		
-	
+			
+			// cropping
+			
 			crop_boundaries = perform_cropping(cropping, H, W);
 			Le = crop_boundaries[0]; Up = crop_boundaries[1];
 	
-			//////////////////////////////////////////////////////////////////////////////////////////////////////////
-			// Filter and detect aponeuroses //
-			///////////////////////////////////
+	
+			// aponeuroses detection
 	
 			ap_filter = filter_aponeuroses(apLength, clahe_ap, Tsigma);
 			WFoV = ap_filter[0]; HFoV = ap_filter[1]; IDfilteredAp = ap_filter[2];
@@ -267,6 +263,7 @@ macro "SMA - Simple Muscle Architecture" {
 						apLength = Dialog.getNumber();
 						extrapolate_from = Dialog.getString();
 						counter = 0;
+run("Remove Overlay");						
 						setBatchMode(true);
 					} else {
 						setBatchMode(true);  // continue analysis
@@ -291,6 +288,7 @@ macro "SMA - Simple Muscle Architecture" {
 		a_m = MAy[0] - b_m * MAx[0];
 		betaM = atan(b_m)* (180/PI); //angle mid line
 	
+	
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// Measure fascicle orientation	//
 		//////////////////////////////////	
@@ -312,7 +310,7 @@ macro "SMA - Simple Muscle Architecture" {
 		run("Duplicate...", " ");
 		IDrawR  = getImageID();
 		betaDeepR = -betaDeep;
-        run("Rotate... ", "angle=betaDeepR grid=1 interpolation=Bicubic");		
+        run("Rotate... ", "  angle=betaDeepR grid=1 interpolation=Bicubic");		
 
 		// rotate stored aponeuroses ROIs
 		roiManager("Select", 0);
@@ -378,7 +376,7 @@ macro "SMA - Simple Muscle Architecture" {
 			run("Tubeness", "sigma=filt_sigma use");
 			IDvessel2 = getImageID();
 			selectImage(IDROI); close ();
-			
+		
 			// First directional filter with MorphoLibJ	
 			run("Directional Filtering", "type=Max operation=Opening line=20 direction=2");
 			horizontal_mask_ID = getImageID();
@@ -392,7 +390,7 @@ macro "SMA - Simple Muscle Architecture" {
 			run("FFT");
 			IDFFT2 = getImageID();
 			selectImage(IDFFT2);							
-			setThreshold(find_lower_thresh(99.5), 255);  // used to be 99.82
+			setThreshold(find_lower_thresh(99.7), 255);  // used to be 99.82
 			run("Convert to Mask");
 			run("Inverse FFT");
 			IDinvFFT2 = getImageID();			
@@ -429,17 +427,17 @@ macro "SMA - Simple Muscle Architecture" {
 
 			// outline and list fragments of fascicles processed in the analysis
 			if (disp_fasc == true && is_stack != true) {  // overlay fragments not available yet during stack analyses
+//			if (disp_fasc == true) {  // overlay fragments not available yet during stack analyses
 				selectImage(filtered_IDROI);
 				run("8-bit");
 				run("Auto Local Threshold", "method=Otsu radius=15 parameter_1=0 parameter_2=0 white");
-				run("Analyze Particles...", "circularity=0.0-0.5 add");  				
-
+				run("Analyze Particles...", "circularity=0.0-0.7 add");
 				// calculate translation offsets
 				if (geometry == "Curved_spline" || geometry == "Curved_circle") {
 					if (i == 2) {
 						IDROI_x = UAxR[0]; IDROI_y = maxUAyR+5;  // superficial ROI
 					} else if (i == 3) {
-						IDROI_x = deep_roi_x; IDROI_y = minLAyR-mindistR*(ROIheight+5)*0.01;  // depp ROI
+						IDROI_x = deep_roi_x; IDROI_y = minLAyR-mindistR*(ROIheight+5)*0.01;  // deep ROI
 					}	
 				} else if (geometry == "Straight") {
 					IDROI_x = deep_roi_x; IDROI_y = minLAyR-mindistR*(ROIheight+5)*0.01;
@@ -447,10 +445,13 @@ macro "SMA - Simple Muscle Architecture" {
 				// apply rotation and translation transformations to match original image
 				new_n = roiManager("count");
 				for (j = start_n; j < new_n; j++) {
-				    roiManager("select", j);    
+				    roiManager("select", j); 
 				    getSelectionBounds(x_temp, y_temp, _, _);
 				    Roi.move(x_temp + IDROI_x, y_temp + IDROI_y);
-					run("Rotate...", "rotate angle=betaDeep");
+				    roiManager("update");
+				    roiManager("select", j);
+					run("Rotate...", "  angle=betaDeep");
+//					run("Rotate...", "rotate angle=betaDeep"); //TODO: fix
 					Roi.setStrokeColor("55ffff00");  // set outlines colour to transparent yellow
 					roiManager("update");
 				}
@@ -464,8 +465,9 @@ macro "SMA - Simple Muscle Architecture" {
 		selectImage(IDraw);
 		roiManager("select", Array.getSequence(roi_init_n));
 		roiManager("delete");
-		if (roiManager("count") > 0)
-		run("From ROI Manager");
+		if (roiManager("count") > 0) {
+			run("From ROI Manager");
+		}
 
 		roiManager("reset");			
 
@@ -548,7 +550,7 @@ macro "SMA - Simple Muscle Architecture" {
 			List.setMeasurements;
 			Lf = List.getValue("Length");				
 			roiManager("add");
-			
+			RoiManager.setPosition(slice);
 		
 		} else { //if fascicles are analysed as straight lines
 			alphaDeep = -roi_store[2];			
@@ -588,6 +590,7 @@ macro "SMA - Simple Muscle Architecture" {
 	
 			makeLine(Olx, Oly, Oux, Ouy);
 			roiManager("Add");
+			RoiManager.setPosition(slice);
 		}
 
 		//adjust fascicle and ROIs display
@@ -823,7 +826,7 @@ function open_file(path)	{
 // Open any file, including DICOM and movies
 	splitted = split(File.getName(path), ".");
 	if (path.endsWith(".dcm") || splitted.length == 1) {  // extension is .dcm or none
-		run("Bio-Formats Importer", "open=path autoscale color_mode=Default open_files rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
+		run("Bio-Formats", "open=path autoscale color_mode=Default open_files rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
 		unstack_color_channels();
 	} else if (path.endsWith(".avi") | path.endsWith(".mp4")) {
 		run("Movie (FFMPEG)...", "choose=[path] first_frame=0 last_frame=-1");
@@ -872,11 +875,7 @@ function manual_cropping(folder_path) {
 		}
 	} else if (is_stack == true) {
 		if (fixed_ROI.length == 0) {
-			setBatchMode(false);
 			run("Duplicate...", " ");
-			if (flip == true) {
-				run("Flip Horizontally");
-			}
 		} else {  // manual_stack_crop == "Whole stack"
 			return fixed_ROI;
 		}
@@ -888,7 +887,7 @@ function manual_cropping(folder_path) {
 	if (manual_stack_crop == "Whole stack") { 
 		fixed_ROI = Array.concat(fixed_ROI,roi_coords);
 	}
-	setBatchMode(true);
+//	setBatchMode(true);
 	if (folder_path.length > 0 || is_stack == true) {
 		close ();
 	}
@@ -910,7 +909,13 @@ function perform_cropping(cropping, H, W) {
 	 * returns an array containing two elements: the left (Le) and top (Up) coordinates of the cropping rectangle.
 	 */
     if (cropping == "Manual") {
+    	if (dev == false) {
+			setBatchMode(false);
+		}
         manual_roi = manual_cropping("");
+    	if (dev == false) {
+			setBatchMode(true);
+		}
         x = manual_roi[0]; y = manual_roi[1]; width = manual_roi[2]; height = manual_roi[3];
         Le = x+W*0.005;
         Up = y+H*0.01; // shifts cropped window down by offset
@@ -958,7 +963,6 @@ function enhance_filter(clahe_ap, Tsigma) {
 }
 
 
-// TODO: keep adjusting morpholibj filter
 function filter_aponeuroses(apLength, clahe_ap, Tsigma) {
     run("Duplicate...", " ");					
     IDFoV = getImageID();		
@@ -1474,6 +1478,11 @@ function handle_stacks() {
 	if (nSlices == 1)  // not a stack
 		return;
 	is_stack = true;
+	parent = File.directory;
+	sep = File.separator;
+	if (endsWith(parent, sep+sep) == true) {
+		parent = substring(parent, 0, parent.length-1);
+	}
 	
 	Dialog.createNonBlocking("Image stack");
 	Dialog.addCheckbox("Flip image horizontally", flip);
@@ -1487,6 +1496,7 @@ function handle_stacks() {
 	Dialog.addSlider("end", 1, nSlices, nSlices);
 	Dialog.addMessage("Alternatively, enter comma-separated frame numbers");
 	Dialog.addString("Discrete frames", "", 4);
+	Dialog.addCheckbox("Save to AVI", false);
 	Dialog.show();
 	flip = Dialog.getCheckbox();
 	if (cropping == "Manual") {
@@ -1496,6 +1506,7 @@ function handle_stacks() {
 	start = Dialog.getNumber();
 	end = Dialog.getNumber();
 	slices_string = Dialog.getString();
+	save_to_avi = Dialog.getCheckbox();
 
 	if (target == "Current frame only") {
 		start = getSliceNumber(); end = start;
@@ -1521,11 +1532,18 @@ function handle_stacks() {
 		}
 		Overlay.hide
 		run("Select None"); 
-		singleImageAnalysis();
+		singleImageAnalysis();		
 		roiManager("reset");
 		display_results();
 	}
-	Overlay.show
+	if (dev == false) {
+		setBatchMode(false);
+	}
+	Overlay.show;
+	if (target != "Current frame only" && save_to_avi == true) {
+		path = parent + title + "_processed.avi";
+		stack_to_avi(start, end, path);
+	}
 	exit;
 }
 
@@ -1652,5 +1670,16 @@ function secondary_gui() {
 		update_settings_file();
 		List.clear();
 	}
+}
+
+
+function stack_to_avi(start, end, path) { 
+// function description
+	run("Flatten", "stack");
+	run("Make Substack...", "slices="+start+"-"+end);
+	subID = getImageID();
+	avi_path = path + "processed.avi";
+	run("AVI... ", "compression=JPEG frame=25 save="+path);
+	selectImage(subID); close();
 }
 
