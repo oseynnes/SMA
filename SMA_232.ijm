@@ -30,13 +30,9 @@
 // Change log //
 ////////////////
 /*
- *  Version 2.3.1
- *  *NB: this version changes the analysis methods and the results are different from previous versions*
- *  - Small adjustment of FFT filter to segment fascicles
- *  - Add function to save processed stacks as AVI.
- *  - Fix various bugs
- *  - KNOWN REMAINING BUG: the display of the detected fascicle fragments stopped working properly. This does not affect the result.
- *  will be fixed with a future update.
+ *  Version 2.3.2
+ *  - Add export to CSV for results from image stack analysis
+ *  - Fix bug preventing from opening image stacks in Windows
  * 
  */
 
@@ -263,7 +259,7 @@ macro "SMA - Simple Muscle Architecture" {
 						apLength = Dialog.getNumber();
 						extrapolate_from = Dialog.getString();
 						counter = 0;
-run("Remove Overlay");						
+						run("Remove Overlay");						
 						setBatchMode(true);
 					} else {
 						setBatchMode(true);  // continue analysis
@@ -390,7 +386,7 @@ run("Remove Overlay");
 			run("FFT");
 			IDFFT2 = getImageID();
 			selectImage(IDFFT2);							
-			setThreshold(find_lower_thresh(99.7), 255);  // used to be 99.82
+			setThreshold(find_lower_thresh(99.5), 255);  // used to be 99.82
 			run("Convert to Mask");
 			run("Inverse FFT");
 			IDinvFFT2 = getImageID();			
@@ -1496,7 +1492,8 @@ function handle_stacks() {
 	Dialog.addSlider("end", 1, nSlices, nSlices);
 	Dialog.addMessage("Alternatively, enter comma-separated frame numbers");
 	Dialog.addString("Discrete frames", "", 4);
-	Dialog.addCheckbox("Save to AVI", false);
+	Dialog.addCheckbox("Save processed video (AVI)", false);
+	Dialog.addCheckbox("Save results (CSV)", false);
 	Dialog.show();
 	flip = Dialog.getCheckbox();
 	if (cropping == "Manual") {
@@ -1507,6 +1504,7 @@ function handle_stacks() {
 	end = Dialog.getNumber();
 	slices_string = Dialog.getString();
 	save_to_avi = Dialog.getCheckbox();
+	save_to_csv = Dialog.getCheckbox();
 
 	if (target == "Current frame only") {
 		start = getSliceNumber(); end = start;
@@ -1536,13 +1534,17 @@ function handle_stacks() {
 		roiManager("reset");
 		display_results();
 	}
-	if (dev == false) {
-		setBatchMode(false);
-	}
 	Overlay.show;
 	if (target != "Current frame only" && save_to_avi == true) {
-		path = parent + title + "_processed.avi";
-		stack_to_avi(start, end, path);
+		avi_path = parent + title + "_processed.avi";
+		stack_to_avi(start, end, avi_path);
+	}
+	if (save_to_csv == true) {
+		csv_path = parent + title + "_results.csv";
+		saveAs("Results", csv_path);
+	}
+	if (dev == false) {
+		setBatchMode(false);
 	}
 	exit;
 }
@@ -1623,7 +1625,13 @@ function load_settings_file() {
 		create_settings_log(logpath);
 	}
 	logstring = File.openAsString(logpath);
-	List.setList(logstring);
+	logstring_lines = split(logstring, "\n");
+	for (i = 0; i < logstring_lines.length; i++) {
+		if (logstring_lines[i] > 2) {
+			split_line = split(logstring_lines[i], "=");
+			List.set(split_line[0], split_line[1]);
+		}	
+	}
 }
 
 
