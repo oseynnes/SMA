@@ -1,6 +1,10 @@
 # Changelog
 
 ## 2024-03-31
+Version 2.3.3  
+- Minor bug fixes  
+
+## 2024-03-31
 Version 2.3.2  
 - Add export to CSV for results from image stack analysis  
 - Fix bug preventing from opening image stacks in Windows    

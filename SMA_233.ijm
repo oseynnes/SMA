@@ -30,9 +30,8 @@
 // Change log //
 ////////////////
 /*
- *  Version 2.3.2
- *  - Add export to CSV for results from image stack analysis
- *  - Fix bug preventing from opening image stacks in Windows
+ *  Version 2.3.3
+ *  - Minor bug fixes
  * 
  */
 
@@ -376,7 +375,9 @@ macro "SMA - Simple Muscle Architecture" {
 			// First directional filter with MorphoLibJ	
 			run("Directional Filtering", "type=Max operation=Opening line=20 direction=2");
 			horizontal_mask_ID = getImageID();
-			selectWindow("Log"); run("Close");
+			if (isOpen("Log")){
+				selectWindow("Log"); run("Close");
+			}
 			imageCalculator("Subtract create", IDvessel2, horizontal_mask_ID);
 			filtered_IDROI = getImageID();
 			selectImage(IDvessel2); close ();
@@ -978,7 +979,9 @@ function filter_aponeuroses(apLength, clahe_ap, Tsigma) {
 	run("Directional Filtering", "type=Max operation=Opening line=fragment_length direction=2");
 	selectImage(IDvessel1); close();
 	IDvessel1  = getImageID();
-	selectWindow("Log"); run("Close");
+	if (isOpen("Log")){
+		selectWindow("Log"); run("Close");
+	}
     // Preprocessing - Threshold from FFT
     run("FFT");
     IDFFT1 = getImageID();
