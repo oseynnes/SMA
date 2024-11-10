@@ -1,6 +1,8 @@
   
 !!! note ""
-    The SMA script was developed for a certain type of muscle architecture images, with our equipment. The detection will need adjustment. An essential precaution is that images from the same dataset should be analysed with identical or at least similar parameters. In case of manual cropping, the cropped area should be identical in all images.  
+    The SMA script was developed for a certain type of muscle architecture images, with our equipment.  
+    The detection will need adjustment.  
+    An essential precaution is that images from the same dataset should be analysed with identical or at least similar parameters. In case of manual cropping, the cropped area should be identical in all images.  
 
   <br>
 
