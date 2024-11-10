@@ -9,7 +9,7 @@ Installations steps can be found in the "Supporting information" file published 
 NB: for all users, the optional step 3 to add SMA to the *Plugins* menu has changed. These instructions are updated bellow.
 
 ## Supporting information
-Basic user instructions can be found in the original article but there is no manual for now. Features added after the initial release are only briefly explained in the [changelog](https://github.com/oseynnes/SMA/blob/master/changelog.md). Functions of the starting interface also have a short mouse-over explanation.
+Basic user instructions can be found in the original article but there is no real manual for now, except for [this troubleshooting guide](https://oseynnes.github.io/SMA/). Features added after the initial release are only briefly explained in the [changelog](https://github.com/oseynnes/SMA/blob/master/changelog.md). Functions of the starting interface also have a short mouse-over explanation.
 
 ### Installation instructions
 
