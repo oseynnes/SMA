@@ -1,0 +1,22 @@
+site_name: SMA troubleshooting
+theme:
+#  name: mkdocs
+#  name: readthedocs
+  name: material
+
+plugins:
+  - search  # include search field (standard MkDocs)
+
+
+markdown_extensions:
+  - sane_lists  # ensure list continuity (standard markdown library)
+  - admonition  # https://squidfunk.github.io/mkdocs-material/reference/admonitions/
+  - pymdownx.details  # required to make some admonitions collapsable
+  - extra
+  - toc
+  - attr_list
+
+nav:
+  - Start here: index.md
+
+
