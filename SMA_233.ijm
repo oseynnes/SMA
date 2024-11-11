@@ -53,7 +53,7 @@
 #@ String(value = "<html><br> --------------- Aponeuroses --------------- </br></html>", visibility="MESSAGE") text4	
 #@ Integer (label="Tubeness sigma", value=8, style="slider", min=2, max=14, stepSize=2, persist=true, description="Standard deviation of the Gaussian filter. Proportional to aponeurosis thickness") Tsigma
 #@ Boolean(label= "Enhance aponeuroses filter", value=false, persist=true, description="run 'Enhance Local Contrast' plugin (CLAHE). Not recommended unless aponeuroses lack contrast") clahe_ap
-#@ Integer(label="Length (% of FoV width)", value=80, min=50, max=95, stepSize=5, persist=true, description="Expected length of detected aponeuroses relative to FoV width. default: 80%") apLength
+#@ Integer(label="Length (% of FoV width)", value=80, min=40, max=95, stepSize=5, persist=true, description="Expected length of detected aponeuroses relative to FoV width. default: 80%") apLength
 #@ String(label = "Extrapolate from (% of aponeurosis length)", choices = {"100%", "50%"}, persist=true, description="") extrapolate_from
 #@ Boolean(label= "Run an aponeurosis detection test (ONLY SINGLE IMAGES)", value=false, persist=true, description="Pause script to try other aponeurosis detection parameters") apo_test
 
