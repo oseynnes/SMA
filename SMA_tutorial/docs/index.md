@@ -25,7 +25,8 @@
 - **Possible cause**: the skin layer is detected as an aponeurosis  
 - **Try**: choose **manual cropping** and cut out the skin layer  
   
-![sma_image_cropping1.png](src%2Fsma_image_cropping1.png)  
+![sma_image_cropping1.png](src/sma_image_cropping1.png)  
+  
   
 - **Possible cause**: the lower aponeurosis line is too faint  
 - **Try**: check box to activate **enhancing filter**  
