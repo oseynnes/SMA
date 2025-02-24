@@ -668,7 +668,7 @@ macro "SMA - Simple Muscle Architecture Analysis" {
 				Th = sum/Th.length;
 			}
 			
-			//Fascicle length from trigonometry
+			//Fascicle length from trigonometry.
 			Lf_trig = Th / Math.sin(theta * (PI / 180));
 		}
 
