@@ -30,8 +30,11 @@
 // Change log //
 ////////////////
 /*
- *  Version 2.3.3
- *  - Minor bug fixes
+ *  Version 2.4
+ *  - changed implementation of OJ plugin
+ *  - add warning message if fascicles are orientated in the wrong direction.
+ *  - changed aponeurosis fit
+ *  - improved user scaling
  * 
  */
 
@@ -53,7 +56,7 @@
 #@ String(value = "<html><br> --------------- Aponeuroses --------------- </br></html>", visibility="MESSAGE") text4	
 #@ Integer (label="Tubeness sigma", value=8, style="slider", min=2, max=14, stepSize=2, persist=true, description="Standard deviation of the Gaussian filter. Proportional to aponeurosis thickness") Tsigma
 #@ Boolean(label= "Enhance aponeuroses filter", value=false, persist=true, description="run 'Enhance Local Contrast' plugin (CLAHE). Not recommended unless aponeuroses lack contrast") clahe_ap
-#@ Integer(label="Length (% of FoV width)", value=80, min=40, max=95, stepSize=5, persist=true, description="Expected length of detected aponeuroses relative to FoV width. default: 80%") apLength
+#@ Integer(label="Length (% of FoV width)", value=80, min=50, max=95, stepSize=5, persist=true, description="Expected length of detected aponeuroses relative to FoV width. default: 80%") apLength
 #@ String(label = "Extrapolate from (% of aponeurosis length)", choices = {"100%", "50%"}, persist=true, description="") extrapolate_from
 #@ Boolean(label= "Run an aponeurosis detection test (ONLY SINGLE IMAGES)", value=false, persist=true, description="Pause script to try other aponeurosis detection parameters") apo_test
 
@@ -66,7 +69,7 @@
 #@ String(value = "<html><br> -------------------- Other -------------------- </br></html>", visibility="MESSAGE") text7
 #@ Boolean(label="Print analysis parameters", value=true, persist=true, description="Add analysis parameters to the results table") param
 #@ Boolean(label="Display outline of detected fascicle fragments", value=true, persist=true, description="Currently only works with single images") disp_fasc
-#@ Boolean(label="Developper mode", value=false, persist=true, description="Disable batch mode and show intermediate steps of analysis") dev
+#@ Boolean(label="Developer mode", value=false, persist=true, description="Disable batch mode and show intermediate steps of analysis") dev
 */
 
 // GLOBAL VARIABLES ------------------------------------------------------------
@@ -97,6 +100,7 @@ var Upper = "";
 var Lower = "";
 var x_upp = "";
 var x_low = "";
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -108,6 +112,7 @@ macro "SMA - Simple Muscle Architecture" {
 	clear_results_and_roimanager();
 
 	if (analysis == "Current file" || analysis == "Open file") {
+		
 		if (analysis == "Open file") {
 			input = File.getDirectory(inputFile);
 			file = File.getName(inputFile);
@@ -162,6 +167,7 @@ macro "SMA - Simple Muscle Architecture" {
 ///////////////////////////////////////////
 
 	function singleImageAnalysis() {
+		run("Collect Garbage");
 		
 		start = getTime(); // Use this to time how long the whole code takes for one image
 		title = getTitle();
@@ -188,9 +194,7 @@ macro "SMA - Simple Muscle Architecture" {
 				IDcropped = getImageID();
 				selectImage(IDraw); close();
 				IDraw = IDcropped;
-				if (dev == false) {
-					setBatchMode(true);
-				}
+
 			}
 		}
 		
@@ -224,21 +228,20 @@ macro "SMA - Simple Muscle Architecture" {
 			ap_indices = select_indices(extrapolate_from, x_upp, x_low, Upper, Lower);
 			upper_idx1 = ap_indices[0]; upper_idx2 = ap_indices[1]; lower_idx1 = ap_indices[2]; lower_idx2 = ap_indices[3];
 			
-			
 			//Upper aponeurosis line (y_1 = b_1 * x + a_1)
-			Fit.doFit("Straight Line", Array.slice(x_upp, upper_idx1, upper_idx2), Array.slice(Upper, upper_idx1, upper_idx2));
-			a_1 = Fit.p(0); b_1 = Fit.p(1);
+			params = least_squares_fit(Array.slice(x_upp, upper_idx1, upper_idx2), Array.slice(Upper, upper_idx1, upper_idx2));
+			a_1 = params[1]; b_1 = params[0];
 			betaUp = atan(b_1)* (180/PI); //angle upper aponeurosis
 			//Lower aponeurosis line (y_2 = b_2 * x + a_2)
-			Fit.doFit("Straight Line", Array.slice(x_low, lower_idx1, lower_idx2), Array.slice(Lower, lower_idx1, lower_idx2));
-			a_2 = Fit.p(0); b_2 = Fit.p(1);
+			params = least_squares_fit(Array.slice(x_low, lower_idx1, lower_idx2), Array.slice(Lower, lower_idx1, lower_idx2));
+			a_2 = params[1]; b_2 = params[0];
 			betaDeep = atan(b_2)* (180/PI); //angle deep aponeurosis
 				
 			// Plot the curves on top of the existing image	
 			selectImage(IDraw);
 			applyOverlay(Upper, x_upp);
 			applyOverlay(Lower, x_low);
-	
+
 			counter = 1;
 			// User check of aponeurosis overlay
 			if (analysis == "Current file" || analysis == "Open file") {  // Only implemented for single image analysis
@@ -357,7 +360,7 @@ macro "SMA - Simple Muscle Architecture" {
 			run("32-bit");
 
 			run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");
-			run("Subtract Background...", "rolling=50 sliding");
+			run("Subtract Background...", "rolling=10 sliding");			
 			if (clahe_fasc == true) {
 				run("Enhance Local Contrast (CLAHE)", "blocksize=54 histogram=256 maximum=32 mask=*None* fast_(less_accurate)");
 			}				
@@ -405,22 +408,7 @@ macro "SMA - Simple Muscle Architecture" {
 			selectImage(IDvessel3);	
 
 			// run OrientationJ plugin
-			run("Select All");
-			run("OrientationJ Measure", "sigma="+Osigma);
-
-			selectImage(IDvessel3); close ();
-
-			// retrieve angle values from OrientationJ log window
-			table = getInfo("log"); 					
-			lines = split(table, "\n"); 
-			headings = split(lines[0], "\t"); 
-			values = split(lines[1], "\t");
-			selectWindow("Log");
-			run("Close");
-			roi_store[i] = values[6];
-			roi_store[i] = toString(roi_store[i]);
-			roi_store[i] = replace(roi_store[i], ",", ".");
-			roi_store[i] = parseFloat(roi_store[i]);
+			roi_store[i] = get_angle_from_OJ_distribution();
 
 			// outline and list fragments of fascicles processed in the analysis
 			if (disp_fasc == true && is_stack != true) {  // overlay fragments not available yet during stack analyses
@@ -554,6 +542,13 @@ macro "SMA - Simple Muscle Architecture" {
 		    
 			//Pennation angle
 			theta = alphaDeep + betaDeep;	
+
+			slice_idx = lengthOf(slice_n);
+			if (theta < 0 && lengthOf(slice_n) == 0) {
+				Dialog.create("Image orientation");
+				Dialog.addMessage("The image(s) should be flipped horizontally. Continue anyway?");
+				Dialog.show();
+			}
 
 			//Composite fascicle line  (y_3 = b_3 * x + a_3)
 			b_3 = tan(theta * (PI / 180));				
@@ -955,7 +950,7 @@ function enhance_filter(clahe_ap, Tsigma) {
     IDvessel1  = getImageID();
     selectImage(IDvessel1);
     run("8-bit");
-    
+
     return IDvessel1
 }
 
@@ -1098,6 +1093,25 @@ function detect_aponeuroses(IDfilteredAp, HFoV, Up, Le, analysis, title) {
         }
     }
 
+}
+
+
+function least_squares_fit(x_coords, y_coords) {
+    // Currently used to fit aponeuroses
+    n = x_coords.length;
+    sum_x = 0; sum_y = 0; sum_xy = 0; sum_x2 = 0;
+    
+    for (i = 0; i < n; i++) {
+        sum_x += x_coords[i];
+        sum_y += y_coords[i];
+        sum_xy += x_coords[i] * y_coords[i];
+        sum_x2 += x_coords[i] * x_coords[i];
+    }
+    
+    slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
+    intercept = (sum_y - slope * sum_x) / n;
+    
+    return newArray(slope, intercept);
 }
 
 
@@ -1325,6 +1339,23 @@ function compDiff() {
 }
 
 
+function get_angle_from_OJ_distribution() { 
+// Retrieve dominant direction as Gaussian peak from OJ plugin distribution
+// Method: cubic spline (index 0), min coherency: 80%, min energy: 20%
+	run("OrientationJ Distribution", "tensor="+Osigma+" gradient=0 radian=off table=on min-coherency=80.0 min-energy=20.0 ");
+	Table.rename("Results");
+	columns = split(Table.headings("Results"));
+	angles = newArray();
+	for (i = 1; i < columns.length; i++) {  // skip first col
+		showProgress(i, columns.length-1);
+		Fit.doFit("Gaussian", Table.getColumn("Orientation"), Table.getColumn(columns[i]));
+		angle = Fit.p(2);
+	}
+	close("Results");
+	return angle;
+}
+
+
 function applyOverlay(cInput, x) {	
 	run("Select All");
 	makeSelection("polyline", x, cInput);
@@ -1446,24 +1477,61 @@ function metadata_scale() {
 function userscale() { 
 // function description
 	run("Select None");
-	setTool("line");
-
+	
 	load_settings_file();
 	Dialog.createNonBlocking("Manual scaling");
 	Dialog.setLocation(0, 0);
-	Dialog.addSlider("Scaling distance (cm)", 2, 10, List.getValue("scale_distance"));
-	Dialog.addMessage("<html><b> Draw a line over the scaling distance </b> <br> (usually, over the scaling graduation over or on the side of the field of view) </br></html>");
+	Dialog.addSlider("Scan depth (cm)", 2, 10, List.getValue("scale_distance"));
+	Dialog.addChoice("Machine:", newArray("Supersonic Mach30", "Philips HD11", "Telemed LogicScan", "Other"), "Philips HD11");
 	Dialog.show();
+	
 	scale_distance = Dialog.getNumber(); List.set("scale_distance", scale_distance);
+	machine = Dialog.getChoice();
 	update_settings_file();
 	List.clear();
-
-	getLine(x1, y1, x2, y2, lineWidth);
-	if (x1 == -1) {
-		userscale();
+	
+	if (machine == "Other") {
+		setTool("line");
+		Dialog.createNonBlocking("Manual scaling");
+		Dialog.setLocation(0, 0);
+		Dialog.addMessage("<html><b> Draw a line over the scaling distance </b> <br> (usually, over the scaling graduation over or on the side of the field of view) </br></html>");
+		Dialog.show();
+		
+		getLine(x1, y1, x2, y2, lineWidth);
+		if (x1 == -1) userscale();
+		lineLength = sqrt(pow(x1-x2, 2) + pow(y1-y2, 2));
+		scale_factor = lineLength/(parseInt(scale_distance)*10);  // scaling factor in pxl/mm
+	} else {
+		scale_factor = scale_from_depth(scale_distance);
+		
 	}
-	lineLength = sqrt(pow(x1-x2, 2) + pow(y1-y2, 2));
-	return lineLength/(parseInt(scale_distance)*10);  // scaling factor in pxl/mm
+
+	return scale_factor
+}
+
+
+function scale_from_depth(depth) { 
+// Make calibration line and retrieve
+	setBatchMode(true);
+	if (machine == "Philips HD11") {
+		makeLine(796, 65, 796, 585);
+	} else if (machine == "Supersonic Mach30") {
+		makeLine(552, 90, 552, 505);
+	} else if (machine == "Telemed LogicScan") {
+		makeLine(75, 37, 75, 681);
+	}
+	
+	arr = getProfile();						// get associated profile
+	run("Select None");
+	result = Array.findMaxima(arr, 30);	// Find the maxima - will correspond to the tick marks.
+	result = Array.sort(result);			// and sort it from min to max
+	if (result.length != depth + 1) {
+		exit("No scale detected. Load original image or select 'Other' as ultrasound machine.");
+	}
+	L = result[depth] - result[0];
+	setBatchMode(false);
+
+	return L/parseInt(depth*10);  // scaling factor in pxl/mm
 }
 
 

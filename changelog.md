@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-03-07
+Version 2.4.0  
+ - Changed implementation of OJ plugin  
+ - Add warning message if fascicles are orientated in the wrong direction  
+- Changed aponeurosis fit  
+- Improved user scaling  
+
 ## 2024-03-31
 Version 2.3.3  
 - Minor bug fixes  
