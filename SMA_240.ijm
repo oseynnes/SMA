@@ -848,7 +848,7 @@ function scale(scaling_mode, folder_path) {
 	if (scaling_mode == "Automatic (requires metadata)") {
 		scaleFactor = metadata_scale();
 	} else if (scaling_mode == "Manual") {
-		scaleFactor = userscale();
+		scaleFactor = scale_from_bar_length();
 	}
 	if (folder_path.length > 0) {
 		close ();
@@ -1465,7 +1465,7 @@ function metadata_scale() {
 		if (action == "No scaling") {
 			scaling_factor = 1;
 		} else if (action == "Set scale manually") {
-			scaling_factor = userscale();  // scaling factor in pxl/mm
+			scaling_factor = scale_from_bar_length();  // scaling factor in pxl/mm
 		} else {
 			exit("Analysis process ended");
 		}
@@ -1474,64 +1474,80 @@ function metadata_scale() {
 }
 
 
-function userscale() { 
-// function description
-	run("Select None");
-	
+function scale_from_bar_length() { 
+// Attempts to find scale bar or prompt user to draw line over it
 	load_settings_file();
+	
 	Dialog.createNonBlocking("Manual scaling");
-	Dialog.setLocation(0, 0);
-	Dialog.addSlider("Scan depth (cm)", 2, 10, List.getValue("scale_distance"));
-	Dialog.addChoice("Machine:", newArray("Supersonic Mach30", "Philips HD11", "Telemed LogicScan", "Other"), "Philips HD11");
-	Dialog.show();
-	
-	scale_distance = Dialog.getNumber(); List.set("scale_distance", scale_distance);
-	machine = Dialog.getChoice();
-	update_settings_file();
+ 	Dialog.setLocation(0, 0);
+ 	Dialog.addSlider("Scan depth (cm)", 2, 10, List.getValue("scale_distance"));
+ 	Dialog.show();
+ 	scale_distance = Dialog.getNumber(); List.set("scale_distance", scale_distance);  // scale_distance = scan depth
+ 	update_settings_file();
 	List.clear();
-	
-	if (machine == "Other") {
-		setTool("line");
-		Dialog.createNonBlocking("Manual scaling");
-		Dialog.setLocation(0, 0);
-		Dialog.addMessage("<html><b> Draw a line over the scaling distance </b> <br> (usually, over the scaling graduation over or on the side of the field of view) </br></html>");
-		Dialog.show();
-		
-		getLine(x1, y1, x2, y2, lineWidth);
-		if (x1 == -1) userscale();
-		lineLength = sqrt(pow(x1-x2, 2) + pow(y1-y2, 2));
-		scale_factor = lineLength/(parseInt(scale_distance)*10);  // scaling factor in pxl/mm
-	} else {
-		scale_factor = scale_from_depth(scale_distance);
-		
-	}
 
-	return scale_factor
+	found = false;
+	width = getWidth();
+	height = getHeight();
+	for (i = 0; i < width; i++) {
+		makeLine(i, 5, i, height-5);
+		arr = getProfile();
+		result = Array.findMaxima(arr, 30);	    // Find the maxima - will correspond to the tick marks.
+		result = Array.sort(result);			// and sort it from min to max
+		if (result.length == scale_distance + 1) {
+			if (checkEqualIntervals(result, 1) && result[0] < height/2 && result[scale_distance] > height/2) {
+				found = true;
+				scale_bar_length = result[scale_distance] - result[0];
+				break;
+			}
+		}
+	}
+	run("Select None");
+	if (!found) {
+		scale_bar_length = manual_scale_bar_length();
+	}
+	
+	return scale_bar_length/parseInt(scale_distance*10);  // scaling factor, *10 to get mm
 }
 
 
-function scale_from_depth(depth) { 
-// Make calibration line and retrieve
-	setBatchMode(true);
-	if (machine == "Philips HD11") {
-		makeLine(796, 65, 796, 585);
-	} else if (machine == "Supersonic Mach30") {
-		makeLine(552, 90, 552, 505);
-	} else if (machine == "Telemed LogicScan") {
-		makeLine(75, 37, 75, 681);
-	}
-	
-	arr = getProfile();						// get associated profile
-	run("Select None");
-	result = Array.findMaxima(arr, 30);	// Find the maxima - will correspond to the tick marks.
-	result = Array.sort(result);			// and sort it from min to max
-	if (result.length != depth + 1) {
-		exit("No scale detected. Load original image or select 'Other' as ultrasound machine.");
-	}
-	L = result[depth] - result[0];
-	setBatchMode(false);
+function checkEqualIntervals(array, tolerance) {
+    if (array.length < 2) {
+        return true; // Arrays with 0 or 1 element are considered valid
+    }
+    
+    firstInterval = array[1] - array[0];  // first interval as reference
 
-	return L/parseInt(depth*10);  // scaling factor in pxl/mm
+    for (i = 1; i < array.length - 1; i++) {
+        interval = array[i + 1] - array[i];
+        difference = abs(interval - firstInterval);
+        
+        if (difference > tolerance) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+
+function manual_scale_bar_length() { 
+// Prompt user to draw over ultrasound scale bar
+	run("Select None");
+	unit = "mm";
+
+	setTool("line");
+	Dialog.createNonBlocking("Manual scaling");
+	Dialog.setLocation(0, 0);
+	Dialog.addMessage("<html><b> Draw a line over the scaling distance </b> <br> (usually, over the scaling graduation over or on the side of the field of view) </br></html>");
+	Dialog.show();
+	
+	getLine(x1, y1, x2, y2, lineWidth);
+	run("Select None");
+	if (x1 == -1) manual_scale_bar_length();
+	lineLength = sqrt(pow(x1-x2, 2) + pow(y1-y2, 2));
+
+	return lineLength;
 }
 
 
